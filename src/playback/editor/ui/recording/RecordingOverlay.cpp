@@ -50,6 +50,13 @@ ImVec4 color(ImU32 value, float alpha = 1.0f) {
     return c;
 }
 
+// "2 min", "90 s", "1 min 30 s"
+std::string durationText(int seconds) {
+    if (seconds % 60 == 0) return "playback.record.duration.minutes"_tr(seconds / 60);
+    if (seconds < 60) return "playback.record.duration.seconds"_tr(seconds);
+    return "playback.record.duration.minutesSeconds"_tr(seconds / 60, seconds % 60);
+}
+
 std::string elapsedText(double seconds) {
     auto const total = static_cast<long long>(seconds);
     if (total >= 3600) return std::format("{}:{:02}:{:02}", total / 3600, total / 60 % 60, total % 60);
@@ -236,16 +243,25 @@ void drawRecordTab(record::RecordingStatusSnapshot const& status, settings::Sett
         ImGui::TextColored(color(kInkDim), "%s", "playback.record.panel.flashbackOnlyNote"_tr(config.output.sourceKeep.days).c_str());
     }
 
-    if (config.instantReplay.enabled || buffering) {
+    bool const instantRunning = buffering || status.instantReplay;
+    if (config.instantReplay.enabled || instantRunning) {
         heading("playback.record.panel.instantReplay"_tr());
-        if (buffering) {
-            ImGui::TextColored(color(kBlue), "%s %s", ICON_TRACK_ACTIVE, "playback.record.panel.bufferingNote"_tr(config.instantReplay.minutes).c_str());
-            float const half = (width - ImGui::GetStyle().ItemSpacing.x) / 2;
-            auto const  save = std::format("{}  {}   ({})", ICON_SAVE, "playback.record.panel.saveInstant"_tr(config.instantReplay.minutes), config.hotkeys.saveInstant);
+        auto const length = durationText(config.instantReplay.seconds);
+        if (instantRunning) {
+            ImGui::TextColored(
+                color(kBlue),
+                "%s %s",
+                ICON_TRACK_ACTIVE,
+                (buffering ? "playback.record.panel.bufferingNote"_tr(length) : "playback.record.panel.alongsideNote"_tr(length)).c_str()
+            );
+            float const half = buffering ? (width - ImGui::GetStyle().ItemSpacing.x) / 2 : width;
+            auto const  save = std::format("{}  {}   ({})", ICON_SAVE, "playback.record.panel.saveInstant"_tr(length), config.hotkeys.saveInstant);
             if (primaryButton(save.c_str(), kBlue, {half, ImGui::GetFontSize() * 2.0f})) control.submit({RecordCommand::SaveInstant});
-            ImGui::SameLine();
-            if (primaryButton(std::format("{}  {}", ICON_STOP, "playback.record.panel.stopBuffer"_tr()).c_str(), kRaised, {half, ImGui::GetFontSize() * 2.0f})) {
-                control.submit({RecordCommand::StopBuffer});
+            if (buffering) {
+                ImGui::SameLine();
+                if (primaryButton(std::format("{}  {}", ICON_STOP, "playback.record.panel.stopBuffer"_tr()).c_str(), kRaised, {half, ImGui::GetFontSize() * 2.0f})) {
+                    control.submit({RecordCommand::StopBuffer});
+                }
             }
         } else if (status.phase == RecordingPhase::Idle) {
             if (primaryButton("playback.record.panel.startBuffer"_tr().c_str(), kRaised)) control.submit({RecordCommand::StartBuffer});
@@ -420,12 +436,14 @@ void drawSettingsTab(settings::Settings const& config) {
         edit([instantEnabled](settings::Settings& s) { s.instantReplay.enabled = instantEnabled; });
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", "playback.record.settings.instantHelp"_tr().c_str());
-    int instantMinutes = config.instantReplay.minutes;
-    label("playback.record.settings.instantMinutes"_tr());
+    int instantSeconds = config.instantReplay.seconds;
+    label("playback.record.settings.instantLength"_tr());
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
-    if (ImGui::SliderInt("##instantMinutes", &instantMinutes, 1, 10, "playback.record.settings.minutesFormat"_tr().c_str())) {
-        edit([instantMinutes](settings::Settings& s) { s.instantReplay.minutes = instantMinutes; });
+    if (ImGui::SliderInt("##instantSeconds", &instantSeconds, 15, 1200, "%d s", ImGuiSliderFlags_Logarithmic)) {
+        edit([instantSeconds](settings::Settings& s) { s.instantReplay.seconds = instantSeconds; });
     }
+    ImGui::SameLine();
+    ImGui::TextColored(color(kInkDim), "%s", durationText(instantSeconds).c_str());
     int instantMegabytes = config.instantReplay.maxMegabytes;
     label("playback.record.settings.instantMegabytes"_tr());
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
@@ -515,7 +533,8 @@ void drawSettingsTab(settings::Settings const& config) {
             config.hotkeys.marker,
             config.hotkeys.panel,
             config.hotkeys.recordWithMode,
-            config.hotkeys.saveInstant
+            config.hotkeys.saveInstant,
+            config.hotkeys.toggleInstant
         )
             .c_str()
     );
@@ -796,6 +815,10 @@ void drawHud() {
                         separator();
                         ImGui::TextColored(color(tone, opacity), "%s", text.c_str());
                     }
+                }
+                if (status.instantReplay && status.phase != RecordingPhase::Buffering) {
+                    separator();
+                    ImGui::TextColored(color(kBlue, opacity), "%s", "playback.record.hud.instant"_tr().c_str());
                 }
                 if (config.hud.showMarkers && status.markers > 0) {
                     separator();

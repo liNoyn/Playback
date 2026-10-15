@@ -28,6 +28,7 @@ void RecordingStatus::setPhase(RecordingPhase phase) {
     if (phase == RecordingPhase::Idle) {
         mState.elapsedSeconds = 0;
         mState.markers        = 0;
+        mState.instantReplay  = false;
         mState.tps.reset();
     }
 }
@@ -37,6 +38,11 @@ void RecordingStatus::setRecording(settings::OutputMode mode, settings::ConvertT
     mState.mode      = mode;
     mState.convert   = convert;
     mState.streaming = streaming;
+}
+
+void RecordingStatus::setInstantReplay(bool on) {
+    std::scoped_lock lock(mMutex);
+    mState.instantReplay = on;
 }
 
 void RecordingStatus::setProgress(double elapsedSeconds, int markers, std::optional<double> tps) {

@@ -21,7 +21,8 @@
             "hud": {
                 "rec": "REC",
                 "free": "{} GB free",
-                "buffer": "BUFFER"
+                "buffer": "BUFFER",
+                "instant": "Instant replay on"
             },
             "state": {
                 "idle": "Not recording",
@@ -70,11 +71,12 @@
                 "freeSpace": "Free space",
                 "closeHint": "{} or Esc to close",
                 "instantReplay": "Instant replay",
-                "bufferingNote": "Keeping the last {} min",
-                "saveInstant": "Save last {} min",
+                "bufferingNote": "Keeping the last {}",
+                "saveInstant": "Save last {}",
                 "stopBuffer": "Stop buffering",
                 "startBuffer": "Start instant replay",
-                "startReplacesBuffer": "Starting a recording ends the instant replay buffer."
+                "startReplacesBuffer": "Starting a recording replaces the buffer; instant replay keeps working during the recording.",
+                "alongsideNote": "Also keeping the last {} while you record"
             },
             "settings": {
                 "recording": "Recording",
@@ -109,7 +111,7 @@
                 "showConverter": "FlashBridge",
                 "showMarkers": "Markers",
                 "hotkeys": "Hotkeys",
-                "hotkeyList": "Record / stop {}   Pause {}   Marker {}   Panel {} ({})   Save instant replay {}\nChange them in settings.json.",
+                "hotkeyList": "Record / stop {}   Pause {}   Marker {}   Panel {} ({})\nInstant replay: save {}, on / off {}\nChange them in settings.json.",
                 "storage": "Storage",
                 "warnFree": "Warn below",
                 "stopFree": "Stop below",
@@ -119,13 +121,14 @@
                 "openFile": "Show settings.json",
                 "instantReplay": "Instant replay",
                 "instantEnabled": "Keep the last minutes while playing",
-                "instantHelp": "Records in short pieces all the time (a small stall every chunk) and drops old ones. Save with the hotkey.",
+                "instantHelp": "Always keeps the last stretch, also while you record (like NVIDIA Instant Replay), and saves it with the hotkey. A saved clip can be up to one chunk longer than set.",
                 "instantMinutes": "Length",
                 "minutesFormat": "%d min",
                 "instantMegabytes": "Disk limit",
                 "autoRecord": "Auto-record",
                 "autoEnabled": "Apply rules when joining a world",
-                "autoHelp": "The first rule that matches the world or server decides. * and ? work in names."
+                "autoHelp": "The first rule that matches the world or server decides. * and ? work in names.",
+                "instantLength": "Length"
             },
             "status": {
                 "setup": "Setup",
@@ -171,7 +174,10 @@
                 "noFlashBridgeConvert": "FlashBridge is not set up, so the replay cannot be converted.",
                 "convertStarted": "Converting {} for Flashback...",
                 "autoStarted": "Recording started by rule \"{}\"",
-                "autoAsk": "Rule \"{}\" matched. Press {} to start recording."
+                "autoAsk": "Rule \"{}\" matched. Press {} to start recording.",
+                "instantOn": "Instant replay on",
+                "instantOff": "Instant replay off",
+                "instantOnLater": "Instant replay is on; it also works in the next recording."
             },
             "auto": {
                 "record": "Record",
@@ -185,6 +191,11 @@
                 "defaultOutput": "Default output",
                 "addWorld": "Add a rule for world \"{}\"",
                 "addServer": "Add a rule for server \"{}\""
+            },
+            "duration": {
+                "minutes": "{} min",
+                "seconds": "{} s",
+                "minutesSeconds": "{} min {} s"
             }
         },
         "replayBrowser": {

@@ -21,7 +21,8 @@
             "hud": {
                 "rec": "REC",
                 "free": "剩余 {} GB",
-                "buffer": "缓冲"
+                "buffer": "缓冲",
+                "instant": "即时回放已开启"
             },
             "state": {
                 "idle": "未录制",
@@ -70,11 +71,12 @@
                 "freeSpace": "剩余空间",
                 "closeHint": "按 {} 或 Esc 关闭",
                 "instantReplay": "即时回放",
-                "bufferingNote": "正在保留最近 {} 分钟",
-                "saveInstant": "保存最近 {} 分钟",
+                "bufferingNote": "正在保留最近 {}",
+                "saveInstant": "保存最近 {}",
                 "stopBuffer": "停止缓冲",
                 "startBuffer": "开始即时回放",
-                "startReplacesBuffer": "开始录制会结束即时回放缓冲。"
+                "startReplacesBuffer": "开始录制会替换缓冲；录制期间即时回放仍然有效。",
+                "alongsideNote": "录制期间同时保留最近 {}"
             },
             "settings": {
                 "recording": "录制",
@@ -109,7 +111,7 @@
                 "showConverter": "FlashBridge",
                 "showMarkers": "标记",
                 "hotkeys": "快捷键",
-                "hotkeyList": "开始/停止 {}   暂停 {}   标记 {}   面板 {} ({})   保存即时回放 {}\n可在 settings.json 中修改。",
+                "hotkeyList": "开始/停止 {}   暂停 {}   标记 {}   面板 {} ({})\n即时回放：保存 {}，开/关 {}\n可在 settings.json 中修改。",
                 "storage": "存储",
                 "warnFree": "低于此值警告",
                 "stopFree": "低于此值停止",
@@ -119,13 +121,14 @@
                 "openFile": "显示 settings.json",
                 "instantReplay": "即时回放",
                 "instantEnabled": "游玩时持续保留最近几分钟",
-                "instantHelp": "以短片段持续录制（每个片段会有轻微卡顿）并丢弃旧片段，按快捷键保存。",
+                "instantHelp": "持续保留最近一段（录制时也一样，类似 NVIDIA 即时回放），按快捷键保存。保存的片段最多比设定长一个分段。",
                 "instantMinutes": "长度",
                 "minutesFormat": "%d 分钟",
                 "instantMegabytes": "磁盘上限",
                 "autoRecord": "自动录制",
                 "autoEnabled": "进入世界时应用规则",
-                "autoHelp": "匹配该世界或服务器的第一条规则生效，名称中可使用 * 和 ?。"
+                "autoHelp": "匹配该世界或服务器的第一条规则生效，名称中可使用 * 和 ?。",
+                "instantLength": "长度"
             },
             "status": {
                 "setup": "设置",
@@ -171,7 +174,10 @@
                 "noFlashBridgeConvert": "未设置 FlashBridge，无法转换。",
                 "convertStarted": "正在为 Flashback 转换 {}…",
                 "autoStarted": "已按规则“{}”开始录制",
-                "autoAsk": "规则“{}”已匹配，按 {} 开始录制。"
+                "autoAsk": "规则“{}”已匹配，按 {} 开始录制。",
+                "instantOn": "即时回放已开启",
+                "instantOff": "即时回放已关闭",
+                "instantOnLater": "即时回放已开启，下一次录制起也会生效。"
             },
             "auto": {
                 "record": "录制",
@@ -185,6 +191,11 @@
                 "defaultOutput": "默认输出",
                 "addWorld": "为世界“{}”添加规则",
                 "addServer": "为服务器“{}”添加规则"
+            },
+            "duration": {
+                "minutes": "{} 分钟",
+                "seconds": "{} 秒",
+                "minutesSeconds": "{} 分 {} 秒"
             }
         },
         "replayBrowser": {

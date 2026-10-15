@@ -40,6 +40,7 @@ struct Bindings {
     settings::Hotkey marker;
     settings::Hotkey panel;
     settings::Hotkey saveInstant;
+    settings::Hotkey toggleInstant;
 };
 
 std::mutex             gBindingsMutex;
@@ -84,6 +85,7 @@ void handleKey(ll::event::KeyInputEvent& event) {
     else if (matches(bindings.pause, key, ctrl, shift, alt)) command = RecordCommand::TogglePause;
     else if (matches(bindings.marker, key, ctrl, shift, alt)) command = RecordCommand::Marker;
     else if (matches(bindings.saveInstant, key, ctrl, shift, alt)) command = RecordCommand::SaveInstant;
+    else if (matches(bindings.toggleInstant, key, ctrl, shift, alt)) command = RecordCommand::ToggleInstant;
     if (!command) return;
 
     control.submit({*command});
@@ -132,6 +134,7 @@ void RecordControl::applySettings(settings::Settings const& settings) {
         parse(settings.hotkeys.marker, "marker"),
         parse(settings.hotkeys.panel, "panel"),
         parse(settings.hotkeys.saveInstant, "saveInstant"),
+        parse(settings.hotkeys.toggleInstant, "toggleInstant"),
     };
     std::scoped_lock lock(gBindingsMutex);
     gBindings = bindings;
@@ -211,6 +214,21 @@ void RecordControl::execute(RecordRequest const& request, ClientInstance& client
     case RecordCommand::SaveInstant:
         recorder.saveInstantReplay();
         break;
+    case RecordCommand::ToggleInstant: {
+        bool const enable = !settings::SettingsStore::getInstance().get().instantReplay.enabled;
+        settings::SettingsStore::getInstance().update([enable](settings::Settings& s) { s.instantReplay.enabled = enable; });
+        mBufferSuppressed = false;
+        if (!enable && recorder.isBuffering()) recorder.stop();
+        // a recording that is already running keeps working the way it started
+        bool const later = enable && recorder.isActive() && !recorder.instantReplayAvailable();
+        status.toast(
+            later ? "playback.record.toast.instantOnLater"_tr()
+                  : enable ? "playback.record.toast.instantOn"_tr() : "playback.record.toast.instantOff"_tr(),
+            ToastKind::Info,
+            std::chrono::seconds(4)
+        );
+        break;
+    }
     case RecordCommand::StartBuffer:
         mBufferSuppressed = false;
         if (inWorld && !recorder.isActive()) recorder.startBuffer();

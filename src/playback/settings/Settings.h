@@ -92,6 +92,7 @@ struct Settings {
         std::string marker         = "F7";
         std::string panel          = "F6";
         std::string saveInstant    = "F9";
+        std::string toggleInstant  = "Shift+F9";
     } hotkeys;
 
     struct Hud {
@@ -112,10 +113,10 @@ struct Settings {
         double stopFreeGB = 1;
     } storage;
 
-    // Records the last few minutes all the time; the hotkey saves them as a replay.
+    // Like NVIDIA Instant Replay: the last stretch is always kept (also while recording) and the hotkey saves it.
     struct InstantReplay {
         bool enabled         = false;
-        int  minutes         = 2;
+        int  seconds         = 120; // how much is kept and saved (15 s - 20 min)
         int  maxMegabytes    = 2048;
         int  chunkSeconds    = 30;
     } instantReplay;

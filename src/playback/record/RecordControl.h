@@ -26,7 +26,8 @@ enum class RecordCommand {
     ClosePanel,
     Recover,
     RestoreFromTrash,
-    SaveInstant,  // F9: cut the last minutes out of the instant replay buffer
+    SaveInstant,   // F9: cut the last minutes out of the instant replay
+    ToggleInstant, // Shift+F9: instant replay on / off (saved in the settings)
     StartBuffer,  // panel: start the instant replay buffer
     StopBuffer,   // panel: stop it (and keep it off until the next world)
 };

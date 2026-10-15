@@ -37,6 +37,7 @@
 | マーカー（しおり） | `F7` | `/record marker [名前]` |
 | 操作パネル | `F6` | `/record panel` |
 | 直近を保存（インスタントリプレイ） | `F9` | |
+| インスタントリプレイのオン／オフ | `Shift+F9` | |
 | 状態の表示 | | `/record status` |
 
 キーはチャット入力中・メニュー表示中は反応しません。すべて `settings.json` で変更できます。
@@ -50,18 +51,22 @@
 - 設定：既定の出力、元の録画の扱い、時間の補正、画面表示、空き容量の警告・停止、言語
 - 状態：FlashBridge の状態と直近の結果（出力先を開く）、未保存の録画の復元、ゴミ箱、診断情報のコピー
 
-## インスタントリプレイ（直近 N 分を保存）
+## インスタントリプレイ（NVIDIA のインスタントリプレイ方式）
 
-設定（パネル F6 →「設定」→ インスタントリプレイ）でオンにすると、ワールドに入っている間、直近 N 分（既定 2 分）を
-常に録画し続けます（画面には `● BUFFER` と出ます）。**`F9` を押した瞬間に、その直近 N 分がリプレイとして保存**されます
-（`…-instant.zip`、タグ `instant`）。出力モードは通常の録画と同じで、「両方」なら FlashBridge で Flashback 用にも変換されます。
+オンにしておくと、ワールドに入っている間、**直近の一定時間（15 秒〜20 分、既定 2 分）を常に保持**します。
+**`F9` を押した瞬間に、その直近分がリプレイとして保存**されます（`…-instant.zip`、タグ `instant`）。
+`Shift+F9` でいつでもオン／オフを切り替えられ、設定は保存されます（パネル F6 →「設定」→ インスタントリプレイ）。
 
-- 録画は 30 秒ごとのチャンクに区切って行い、古い分は捨てます。区切りごとに世界の完全なスナップショットを取るため、
-  通常の録画（5 分ごと）よりわずかな負荷が定期的にかかります。気になる場合は `instantReplay.chunkSeconds` を延ばしてください。
-- ディスク使用量は `instantReplay.maxMegabytes`（既定 2048MB）までです。
-- バッファはゲーム終了・ワールド退出で破棄されます（保存するのは `F9` を押したときだけ）。
-- 通常の録画を始める（`F8`）と、バッファはそこで終わり、録画が引き継ぎます。録画を止めるとバッファは自動で再開します。
-- パネルの「停止」でバッファを止めると、次にワールドに入るまで再開しません。
+- **録画と並行して動きます。** 録画中でも `F9` で直近だけを切り出せ（録画は止まりません）、ふだんは録画していなくても使えます。
+  録画の途中でオンにした場合は、次の録画から反映されます。
+- 出力モードは通常の録画と同じです。「両方」なら FlashBridge で Flashback 用にも変換されます。
+- 保存は背景で行われ、遊びを止めません。保存されるクリップは、設定の長さより**最大で 1 区切り（長さの 1/3 か 30 秒）ぶん長く**
+  なります（区切りごとに完全なスナップショットを持つ方式のため、区切りの途中からは切れません）。
+- 区切りごとに世界のスナップショットを取るので、通常の録画（5 分ごと）より短い負荷が定期的にかかります。
+  気になる場合は `instantReplay.chunkSeconds` を延ばしてください。録画中もオンの間は同じ区切りになります。
+- ディスク使用量は `instantReplay.maxMegabytes`（既定 2048MB）までです。ゲーム終了・ワールド退出でバッファは破棄されます
+  （保存するのは `F9` を押したときだけ）。
+- 録画していないときにパネルの「停止」でバッファを止めると、次にワールドに入るまで再開しません。
 
 ## 自動録画
 
@@ -126,11 +131,11 @@ FlashBridge の `setup-live` が `liveStream`（変換ツールの起動コマ�
   "recording": { "compatibleFormat": false },
   "output": { "mode": "both", "convert": "live", "sourceKeep": "days:7" },
   "timeNormalization": { "mode": "game", "lagMarkers": true, "lagThresholdTps": 15, "maxGapSeconds": 10 },
-  "hotkeys": { "record": "F8", "recordWithMode": "Ctrl+F8", "pause": "Shift+F8", "marker": "F7", "panel": "F6", "saveInstant": "F9" },
+  "hotkeys": { "record": "F8", "recordWithMode": "Ctrl+F8", "pause": "Shift+F8", "marker": "F7", "panel": "F6", "saveInstant": "F9", "toggleInstant": "Shift+F9" },
   "hud": { "enabled": true, "corner": "topRight", "opacity": 0.9, "scale": 1.0, "hideIndicator": false,
            "show": ["elapsed", "freeSpace", "tps", "converter", "markers"] },
   "storage": { "warnFreeGB": 3, "stopFreeGB": 1 },
-  "instantReplay": { "enabled": false, "minutes": 2, "maxMegabytes": 2048, "chunkSeconds": 30 },
+  "instantReplay": { "enabled": false, "seconds": 120, "maxMegabytes": 2048, "chunkSeconds": 30 },
   "autoRecord": { "enabled": true,
                   "rules": [ { "name": "友達のサーバー", "server": "*.example.net", "action": "record", "output": "both" } ] },
   "liveStream": { "enabled": true, "host": "127.0.0.1", "port": 29525, "launchCommand": "...", "maxQueuedMegabytes": 256 }

@@ -48,6 +48,7 @@ struct RecordingStatusSnapshot {
     settings::OutputMode      mode{settings::OutputMode::Playback};
     settings::ConvertTiming   convert{settings::ConvertTiming::Live};
     bool                      streaming{};
+    bool                      instantReplay{}; // saveable with the hotkey (buffering, or alongside a recording)
     std::optional<double>     tps;
     std::optional<double>     freeGB;
     ConverterStatus           converter;
@@ -64,6 +65,7 @@ public:
 
     void setPhase(RecordingPhase phase);
     void setRecording(settings::OutputMode mode, settings::ConvertTiming convert, bool streaming);
+    void setInstantReplay(bool on);
     void setProgress(double elapsedSeconds, int markers, std::optional<double> tps);
     void setFreeSpace(std::optional<double> freeGB);
 

@@ -826,6 +826,8 @@ void Recorder::start(RecordingOptions options) {
     }
     mOptions       = options;
     mWriteTickInfo = !config.recording.compatibleFormat;
+    mTrackChunks   = config.instantReplay.enabled;
+    if (mTrackChunks) configureInstant(config);
 
     resetStateForNewRecording();
     mRecordedLocalPlayerId        = RecordedPlayerUniqueId;
@@ -843,6 +845,7 @@ void Recorder::start(RecordingOptions options) {
 
     mState = State::Recording;
     RecordingStatus::getInstance().setRecording(mOptions.mode, mOptions.convert, mLiveStream != nullptr);
+    RecordingStatus::getInstance().setInstantReplay(mTrackChunks);
     RecordingStatus::getInstance().setPhase(RecordingPhase::Recording);
     getLogger().info(
         "Recording started (output {}, convert {}{})",
@@ -859,11 +862,10 @@ void Recorder::startBuffer() {
 
     auto const config = settings::SettingsStore::getInstance().get();
     mBufferMode       = true;
+    mTrackChunks      = true;
     mWriteTickInfo    = !config.recording.compatibleFormat;
     mOptions          = {config.output.mode, config.output.convert};
-    mBufferChunkTicks  = config.instantReplay.chunkSeconds * 20;
-    mBufferWindowTicks = config.instantReplay.minutes * 60 * 20;
-    mBufferMaxBytes    = static_cast<uint64_t>(config.instantReplay.maxMegabytes) << 20;
+    configureInstant(config);
 
     resetStateForNewRecording();
     mRecordedLocalPlayerId        = RecordedPlayerUniqueId;
@@ -880,18 +882,29 @@ void Recorder::startBuffer() {
 
     mState = State::Recording;
     RecordingStatus::getInstance().setRecording(mOptions.mode, mOptions.convert, false);
+    RecordingStatus::getInstance().setInstantReplay(true);
     RecordingStatus::getInstance().setPhase(RecordingPhase::Buffering);
     getLogger().info(
-        "Instant replay started (last {} min, {} s chunks, at most {} MB)",
-        config.instantReplay.minutes,
-        config.instantReplay.chunkSeconds,
+        "Instant replay started (last {} s, {} s chunks, at most {} MB)",
+        config.instantReplay.seconds,
+        mBufferChunkTicks / 20,
         config.instantReplay.maxMegabytes
     );
 }
 
+// Window, chunk length and disk limit of the instant replay. Chunks are a third of the window at most, so a save is
+// not much longer than asked for (it always starts at a chunk boundary).
+void Recorder::configureInstant(settings::Settings const& config) {
+    int const seconds  = config.instantReplay.seconds;
+    int const chunkSec = std::min(config.instantReplay.chunkSeconds, std::max(10, seconds / 3));
+    mBufferWindowTicks = seconds * 20;
+    mBufferChunkTicks  = chunkSec * 20;
+    mBufferMaxBytes    = static_cast<uint64_t>(config.instantReplay.maxMegabytes) << 20;
+}
+
 void Recorder::saveInstantReplay() {
     using namespace ll::i18n_literals;
-    if (!isBuffering()) {
+    if (!instantReplayAvailable()) {
         RecordingStatus::getInstance().toast("playback.record.toast.notBuffering"_tr(), ToastKind::Warning);
         return;
     }
@@ -2469,7 +2482,7 @@ bool Recorder::finishCurrentChunk(bool close) {
         return false;
     }
 
-    if (mBufferMode) {
+    if (mTrackChunks) {
         mEpochChunks.push_back({chunkName, mTicksInCurrentChunk, mCurrentChunkForcePlaySnapshot, mWrittenTicks - mTicksInCurrentChunk});
     }
 
@@ -2488,9 +2501,10 @@ bool Recorder::finishCurrentChunk(bool close) {
 // Instant replay: a chunk was just closed. Serves a pending save, then starts a new epoch (a fresh recording
 // session with its own chunk cache) when this one is full, and drops epochs the window no longer needs.
 bool Recorder::afterBufferChunk() {
-    if (!mBufferMode) return true;
+    if (!mTrackChunks) return true;
 
     if (std::exchange(mInstantSavePending, false)) queueInstantExport();
+    if (!mBufferMode) return true; // a recording keeps everything; only the buffer drops old data
 
     int epochTicks = 0;
     for (auto const& chunk : mEpochChunks) epochTicks += chunk.ticks;
@@ -2605,6 +2619,7 @@ void Recorder::cancelRecording(std::string_view reason, bool quiet) {
     }
     RecordingStatus::getInstance().setPhase(RecordingPhase::Idle);
     mBufferMode         = false;
+    mTrackChunks        = false;
     mInstantSavePending = false;
     mEpochChunks.clear();
     mFinishedEpochs.clear(); // exports still reading an epoch keep it alive until they are done

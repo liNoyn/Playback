@@ -164,6 +164,7 @@ Settings fromJson(Json const& json) {
     read(hotkeys, "marker", settings.hotkeys.marker);
     read(hotkeys, "panel", settings.hotkeys.panel);
     read(hotkeys, "saveInstant", settings.hotkeys.saveInstant);
+    read(hotkeys, "toggleInstant", settings.hotkeys.toggleInstant);
 
     auto const& hud = section(json, "hud");
     read(hud, "enabled", settings.hud.enabled);
@@ -199,10 +200,15 @@ Settings fromJson(Json const& json) {
 
     auto const& instant = section(json, "instantReplay");
     read(instant, "enabled", settings.instantReplay.enabled);
-    read(instant, "minutes", settings.instantReplay.minutes);
+    if (instant.contains("minutes") && !instant.contains("seconds")) { // live.4 stored minutes
+        int minutes = 2;
+        read(instant, "minutes", minutes);
+        settings.instantReplay.seconds = std::clamp(minutes, 1, 20) * 60;
+    }
+    read(instant, "seconds", settings.instantReplay.seconds);
     read(instant, "maxMegabytes", settings.instantReplay.maxMegabytes);
     read(instant, "chunkSeconds", settings.instantReplay.chunkSeconds);
-    settings.instantReplay.minutes      = std::clamp(settings.instantReplay.minutes, 1, 30);
+    settings.instantReplay.seconds      = std::clamp(settings.instantReplay.seconds, 15, 1200);
     settings.instantReplay.maxMegabytes = std::clamp(settings.instantReplay.maxMegabytes, 256, 16384);
     settings.instantReplay.chunkSeconds = std::clamp(settings.instantReplay.chunkSeconds, 10, 120);
 
@@ -258,6 +264,7 @@ void toJson(Settings const& settings, Json& json) {
     hotkeys["marker"]         = settings.hotkeys.marker;
     hotkeys["panel"]          = settings.hotkeys.panel;
     hotkeys["saveInstant"]    = settings.hotkeys.saveInstant;
+    hotkeys["toggleInstant"]  = settings.hotkeys.toggleInstant;
 
     auto& hud            = sectionOf("hud");
     hud["enabled"]       = settings.hud.enabled;
@@ -286,7 +293,7 @@ void toJson(Settings const& settings, Json& json) {
 
     auto& instant           = sectionOf("instantReplay");
     instant["enabled"]      = settings.instantReplay.enabled;
-    instant["minutes"]      = settings.instantReplay.minutes;
+    instant["seconds"]      = settings.instantReplay.seconds;
     instant["maxMegabytes"] = settings.instantReplay.maxMegabytes;
     instant["chunkSeconds"] = settings.instantReplay.chunkSeconds;
 

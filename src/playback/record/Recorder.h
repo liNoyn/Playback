@@ -127,6 +127,9 @@ private:
     // Instant replay (buffer mode): records continuously in short chunks; whole recording sessions (epochs) are
     // dropped once newer ones cover the window, and a save cuts the last minutes out of what is left.
     bool                                    mBufferMode = false;
+    // Chunks are tracked (short chunks, saveable) while the instant replay is on: in buffer mode, and during a
+    // recording that started while it was on.
+    bool                                    mTrackChunks = false;
     bool                                    mInstantSavePending{};
     int                                     mBufferChunkTicks  = 600;
     int                                     mBufferWindowTicks = 2400;
@@ -224,7 +227,8 @@ private:
     [[nodiscard]] bool afterBufferChunk();
     [[nodiscard]] bool rotateBufferEpoch();
     void               queueInstantExport();
-    [[nodiscard]] int  chunkTickLimit() const { return mBufferMode ? mBufferChunkTicks : RECORD_CHUNK_TICKS; }
+    [[nodiscard]] int  chunkTickLimit() const { return mTrackChunks ? mBufferChunkTicks : RECORD_CHUNK_TICKS; }
+    void               configureInstant(settings::Settings const& config);
 
     void publishProgress();
 
@@ -251,6 +255,8 @@ public:
     void               startBuffer();
     void               saveInstantReplay();
     [[nodiscard]] bool isBuffering() const { return mBufferMode && isActive(); }
+    // True when saveInstantReplay() has something to save (the buffer, or a recording that began with it on).
+    [[nodiscard]] bool instantReplayAvailable() const { return mTrackChunks && isActive(); }
 
     // Places a marker at the current tick; false when nothing is being recorded.
     bool addMarker(std::string name, int color);
