@@ -1,3 +1,5 @@
+[English](README.md) | [日本語](README.ja.md)
+
 > **Live-stream fork.** This is [wo55555/Playback](https://github.com/wo55555/Playback) plus recording extensions:
 > the recording is mirrored to a local converter ([FlashBridge](https://github.com/liNoyn/FlashBridge)) that turns it
 > into a Java Edition [Flashback](https://github.com/Moulberry/Flashback) replay, finished the moment you stop;
@@ -7,7 +9,7 @@
 > Install with `install-live.ps1` from the Releases page; protocol and build notes are in
 > [docs/live-stream.md](docs/live-stream.md), the design in
 > [docs/design/recording-ux-and-time-normalization.md](docs/design/recording-ux-and-time-normalization.md).
-> Not affiliated with the upstream author. 日本語: [README.ja.md](README.ja.md)
+> Not affiliated with the upstream author.
 
 <div align="center">
   <img src="assets/pack_icon.png" alt="Playback icon" width="160">
