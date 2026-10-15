@@ -47,6 +47,15 @@ add_requires("xxhash")
 add_requires("openssl")
 add_requires("libzip")
 add_requires("imgui v1.92.7", {configs = {dx11 = true, dx12 = true}})
+
+-- Fork: `xmake f --bundle_ffmpeg=n` skips building FFmpeg (slow, MSYS2) when updating an existing install
+-- that already has tools/ffmpeg.exe.
+option("bundle_ffmpeg")
+    set_default(true)
+    set_showmenu(true)
+option_end()
+
+if has_config("bundle_ffmpeg") then
 add_requires("playback-ffmpeg 7.1", {
     configs = {
         shared = false,
@@ -57,6 +66,7 @@ add_requires("playback-ffmpeg 7.1", {
         libx264 = true,
     }
 })
+end
 
 if not has_config("vs_runtime") then
     set_runtimes("MD")
@@ -110,8 +120,10 @@ target("playback")
     add_packages("libzip")
     add_packages("imgui")
     add_syslinks("d3d11", "d3d12", "dxgi", "dcomp", "d3dcompiler", "windowscodecs", "ole32", "comdlg32", "shell32", "gdi32")
+    add_syslinks("ws2_32") -- live stream (docs/live-stream.md)
     set_kind("shared")
-    set_languages("c++20")
+    -- Fork: LeviLamina 26.51.7 headers use std::to_underlying (C++23)
+    set_languages("c++23")
     if is_mode("debug") then
         add_defines("DEBUG")
     end
@@ -150,15 +162,19 @@ target("playback")
         os.mkdir(font_dir)
         os.cp(font_source, font_dir)
 
-        local ffmpeg_package = assert(
-            project.required_package("playback-ffmpeg"),
-            "FFmpeg package was not resolved"
-        )
-        local ffmpeg_source  = path.join(ffmpeg_package:installdir(), "bin", "ffmpeg.exe")
-        local tools_dir      = path.join(output_dir, "tools")
-        assert(os.isfile(ffmpeg_source), "bundled ffmpeg executable was not found")
-        os.mkdir(tools_dir)
-        os.cp(ffmpeg_source, path.join(tools_dir, "ffmpeg.exe"))
+        if has_config("bundle_ffmpeg") then
+            local ffmpeg_package = assert(
+                project.required_package("playback-ffmpeg"),
+                "FFmpeg package was not resolved"
+            )
+            local ffmpeg_source  = path.join(ffmpeg_package:installdir(), "bin", "ffmpeg.exe")
+            local tools_dir      = path.join(output_dir, "tools")
+            assert(os.isfile(ffmpeg_source), "bundled ffmpeg executable was not found")
+            os.mkdir(tools_dir)
+            os.cp(ffmpeg_source, path.join(tools_dir, "ffmpeg.exe"))
+        else
+            cprint("${yellow}[Playback]: ${reset}bundle_ffmpeg disabled, tools/ffmpeg.exe not packaged")
+        end
 
         local resource_dir = path.join(os.projectdir(), "resources")
         if os.isdir(resource_dir) then

@@ -3,6 +3,7 @@
 #include "playback/Playback.h"
 #include "playback/action/Action.h"
 #include "playback/io/AsyncReplaySaver.h"
+#include "playback/io/LiveStream.h"
 #include "playback/packet/PacketLifecycle.h"
 #include "playback/record/ChunkMutationBarrier.h"
 #include "playback/utils/PathUtils.h"
@@ -126,6 +127,25 @@ constexpr ActorRuntimeID RecordedPlayerRuntimeId{uint64_t{1} << 62};
 constexpr auto DimensionChangeBarrierTimeout = std::chrono::milliseconds{15000};
 constexpr auto ChunkRotationBarrierTimeout   = std::chrono::milliseconds{8000};
 constexpr auto InitialSnapshotBarrierTimeout = std::chrono::milliseconds{2000};
+
+std::string pathToUtf8(std::filesystem::path const& path) {
+    auto const utf8 = path.u8string();
+    return {reinterpret_cast<char const*>(utf8.data()), utf8.size()};
+}
+
+// Mirrors the new recording to the live converter (fork extension, docs/live-stream.md) when enabled.
+std::shared_ptr<LiveStream> startLiveStream(PlaybackMeta const& metadata) {
+    auto config = LiveStreamConfig::load(Playback::getInstance().getSelf().getDataDir() / "live.json");
+
+    auto const&            version = Playback::getInstance().getSelf().getManifest().version;
+    nlohmann::ordered_json hello{
+        {"protocol",        1                                                },
+        {"playbackVersion", version.has_value() ? version->to_string() : "?"},
+        {"gameVersion",     metadata.gameVersion                             },
+        {"worldName",       metadata.worldName                               }
+    };
+    return LiveStream::start(std::move(config), hello.dump());
+}
 
 struct NetworkPacketFilter {
     [[nodiscard]] static constexpr bool shouldFilter(MinecraftPacketIds packetId) {
@@ -553,13 +573,15 @@ void Recorder::saveRecording() {
     auto replayPath = mAsyncReplaySaver->finish();
     auto saverError = mAsyncReplaySaver->getError();
     mAsyncReplaySaver.reset();
-    mState = State::Idle;
+    mState          = State::Idle;
+    auto liveStream = std::exchange(mLiveStream, nullptr);
 
     if (saverError || replayPath.empty()) {
         getLogger().error(
             "Failed to save recording: {}",
             saverError.value_or("the replay saver did not return a completed recording path")
         );
+        if (liveStream) liveStream->cancel(R"({"reason":"the recording could not be saved"})");
         return;
     }
 
@@ -579,7 +601,16 @@ void Recorder::saveRecording() {
     }
     if (!ReplayExporter::exportReplay(replayPath, outputPath, "")) {
         getLogger().error("Failed to save replay data after recording stopped");
+        if (liveStream) liveStream->cancel(R"({"reason":"the replay could not be exported"})");
         return;
+    }
+    if (liveStream) {
+        nlohmann::ordered_json finish{
+            {"replayFile", pathToUtf8(outputPath)},
+            {"metadata", nlohmann::ordered_json::parse(mMetadata.toJson(), nullptr, false)}
+        };
+        if (finish["metadata"].is_discarded()) finish["metadata"] = nlohmann::ordered_json::object();
+        liveStream->finish(finish.dump());
     }
 }
 
@@ -612,8 +643,6 @@ void Recorder::logRecordedGamePacketSummary() const {
 }
 
 void Recorder::resetStateForNewRecording() {
-    mAsyncReplaySaver = std::make_unique<AsyncReplaySaver>();
-
     mMetadata.chunks.clear();
     mMetadata.totalTicks  = 0;
     mMetadata.gameVersion = PlaybackMeta::currentGameVersion();
@@ -622,6 +651,10 @@ void Recorder::resetStateForNewRecording() {
     if (auto level = ll::service::getMultiPlayerLevel()) {
         mMetadata.worldName = level->getLevelData().mLevelName;
     }
+
+    if (mLiveStream) mLiveStream->cancel(R"({"reason":"a new recording started"})");
+    mLiveStream       = startLiveStream(mMetadata);
+    mAsyncReplaySaver = std::make_unique<AsyncReplaySaver>(mLiveStream);
     mChunkIndex                    = 0;
     mTicksInCurrentChunk           = 0;
     mWrittenTicks                  = 0;
@@ -1994,6 +2027,9 @@ void Recorder::cancelRecording(std::string_view reason) {
     if (mAsyncReplaySaver) {
         mAsyncReplaySaver->cancel();
         mAsyncReplaySaver.reset();
+    }
+    if (auto liveStream = std::exchange(mLiveStream, nullptr)) {
+        liveStream->cancel(nlohmann::ordered_json{{"reason", std::string(reason)}}.dump());
     }
 
     mState                       = State::Idle;

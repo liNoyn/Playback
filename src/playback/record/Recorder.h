@@ -87,6 +87,8 @@ private:
         std::string   name;
     };
     std::unique_ptr<AsyncReplaySaver> mAsyncReplaySaver;
+    // Mirror of the current recording for the live converter (fork extension), null when not streaming.
+    std::shared_ptr<io::LiveStream> mLiveStream;
 
     std::vector<std::shared_ptr<LevelChunkPacket>>            mSnapshotLevelChunks;
     std::vector<std::shared_ptr<SubChunkPacket>>              mSnapshotSubChunks;

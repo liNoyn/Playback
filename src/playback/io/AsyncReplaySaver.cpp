@@ -8,6 +8,7 @@
 #include "mc/network/Packet.h"
 
 #include "snappy.h"
+#include <nlohmann/json.hpp>
 #include <uuid.h>
 
 #include <cstdint>
@@ -39,7 +40,7 @@ std::filesystem::path createRecordPath() {
 
 } // namespace
 
-AsyncReplaySaver::AsyncReplaySaver() {
+AsyncReplaySaver::AsyncReplaySaver(std::shared_ptr<LiveStream> liveStream) : mLiveStream(std::move(liveStream)) {
     try {
         mRecordPath = createRecordPath();
         mReplayWriter.writeHeader();
@@ -79,6 +80,7 @@ void AsyncReplaySaver::workerLoop() {
 
             if (task) {
                 task(mReplayWriter);
+                forwardLiveData();
             }
         }
 
@@ -105,6 +107,16 @@ void AsyncReplaySaver::workerLoop() {
     }
 
     mFinished = true;
+}
+
+// Sends the bytes the writer appended since the last call. While a snapshot is open its size field is still
+// patched later, so nothing is sent until the snapshot ends; after that every task leaves whole actions.
+void AsyncReplaySaver::forwardLiveData() {
+    if (!mLiveStream || !mReplayWriter.isWritingData()) return;
+    auto const& buffer = mReplayWriter.mStream.mBuffer;
+    if (mLiveStreamSent >= buffer.size()) return;
+    mLiveStream->sendChunkData(std::string_view(buffer).substr(mLiveStreamSent));
+    mLiveStreamSent = buffer.size();
 }
 
 void AsyncReplaySaver::recordError(std::string error) {
@@ -245,6 +257,8 @@ bool AsyncReplaySaver::writeGamePackets(std::vector<GamePacket> packets) {
 
                 uint32_t size = static_cast<uint32_t>(endWriterIndex - startWriterIndex) - 4;
                 mChunkCacheOutput.writeAt(startWriterIndex, size);
+                // Queued before the action referencing it, which is forwarded when this task completes.
+                if (mLiveStream) mLiveStream->sendCacheEntry(index, payload);
                 return index;
             };
 
@@ -377,7 +391,9 @@ bool AsyncReplaySaver::writeReplayChunk(std::string chunkName, std::string metad
                 throw std::runtime_error("Failed to open chunk file");
             }
 
+            forwardLiveData();
             std::string chunkData = writer.popBuffer();
+            mLiveStreamSent       = 0; // popBuffer starts the next chunk's buffer with a fresh header
             chunk.write(chunkData.data(), static_cast<std::streamsize>(chunkData.size()));
             chunk.flush();
             if (!chunk) {
@@ -417,6 +433,13 @@ bool AsyncReplaySaver::writeReplayChunk(std::string chunkName, std::string metad
             meta.close();
             if (meta.fail()) {
                 throw std::runtime_error("Failed to close metadata file");
+            }
+
+            if (mLiveStream) {
+                // metadata is the JSON document PlaybackMeta::toJson() produced
+                mLiveStream->sendChunkEnd(
+                    R"({"chunk":)" + nlohmann::json(chunkName).dump() + R"(,"metadata":)" + metadata + "}"
+                );
             }
         });
     } catch (std::exception const& exception) {

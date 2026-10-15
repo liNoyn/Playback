@@ -2,6 +2,8 @@
 
 #include "mc/deps/core/utility/BinaryStream.h"
 
+#include "playback/io/LiveStream.h"
+
 #include <atomic>
 #include <concepts>
 #include <condition_variable>
@@ -118,6 +120,9 @@ public:
     void finishAction(Action& action);
 
     std::string popBuffer();
+
+    // True once the snapshot size has been written: bytes before the write pointer will not change any more.
+    [[nodiscard]] bool isWritingData() const { return mState == STATE_WRITING_DATA; }
 };
 
 class ReplayReader {
@@ -180,15 +185,22 @@ private:
     int mCurrentChunkCacheIndex   = -1;
     int mWrittenChunkCacheFiles   = 0;
 
+    // Live stream mirror (fork extension, docs/live-stream.md); only touched on the worker thread.
+    std::shared_ptr<LiveStream> mLiveStream;
+    uint64_t                    mLiveStreamSent = 0;
+
 private:
     void workerLoop();
+
+    void forwardLiveData();
 
     void recordError(std::string error);
 
     void flushCurrentChunkCacheFile();
 
 public:
-    AsyncReplaySaver();
+    // liveStream may be null; when set, everything written is mirrored to it as it is written.
+    explicit AsyncReplaySaver(std::shared_ptr<LiveStream> liveStream = nullptr);
     ~AsyncReplaySaver();
 
     AsyncReplaySaver(AsyncReplaySaver const&)            = delete;

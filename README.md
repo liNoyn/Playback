@@ -1,3 +1,10 @@
+> **Live-stream fork.** This is [wo55555/Playback](https://github.com/wo55555/Playback) plus one extension:
+> while you record, the recording is mirrored to a local converter that turns it into a Java Edition
+> [Flashback](https://github.com/Moulberry/Flashback) replay, finished the moment you stop
+> ([playback2flashback](https://github.com/liNoyn/playback2flashback)). Everything else is unchanged and
+> the extension is off unless the converter is installed. Install with `install-live.ps1` from the Releases page;
+> protocol and build notes are in [docs/live-stream.md](docs/live-stream.md). Not affiliated with the upstream author.
+
 <div align="center">
   <img src="assets/pack_icon.png" alt="Playback icon" width="160">
   <h1>Playback</h1>
