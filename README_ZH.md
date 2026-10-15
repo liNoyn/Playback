@@ -1,217 +1,144 @@
-<div align="center">
-  <img src="assets/pack_icon.png" alt="Playback 图标" width="160">
-  <h1>Playback</h1>
-  <p><strong>录下此刻，再现世界。</strong></p>
-  <p>面向 Windows LeviLamina 的开源 Minecraft 基岩版回放录制与电影相机编辑模组，并提供实验性视频导出。</p>
+# Playback（实时串流分支）
 
-  <p>
-    <img src="https://img.shields.io/badge/release-v0.3.3-4c8bf5?style=flat-square" alt="Playback v0.3.3">
-    <img src="https://img.shields.io/badge/Minecraft%20Bedrock-Windows%20x64-62b47a?style=flat-square" alt="Windows x64 Minecraft 基岩版">
-    <img src="https://img.shields.io/badge/LeviLamina-26.51.*-7b68ee?style=flat-square" alt="LeviLamina 26.51">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="AGPL-3.0 许可证"></a>
-  </p>
+[English](README.md) | [日本語](README.ja.md) | [简体中文](README_ZH.md)
 
-  <p>
-    <img src="https://img.shields.io/badge/LeviLamina-26.10.*-7b68ee?style=flat-square" alt="LeviLamina 26.10">
-    <img src="https://img.shields.io/badge/LeviLamina-26.20.*-7b68ee?style=flat-square" alt="LeviLamina 26.20">
-    <img src="https://img.shields.io/badge/LeviLamina-26.40.*-7b68ee?style=flat-square" alt="LeviLamina 26.40">
-    <img src="https://img.shields.io/badge/LeviLamina-26.51.*-7b68ee?style=flat-square" alt="LeviLamina 26.51">
-  </p>
+<p>
+  <a href="https://github.com/liNoyn/Playback/releases"><img src="https://img.shields.io/github/v/release/liNoyn/Playback?include_prereleases&style=flat-square" alt="最新发行版"></a>
+  <img src="https://img.shields.io/badge/Minecraft%20Bedrock-1.26.51%20(Windows%20x64)-62b47a?style=flat-square" alt="Minecraft Bedrock 1.26.51, Windows x64">
+  <img src="https://img.shields.io/badge/LeviLamina-26.51.*-7b68ee?style=flat-square" alt="LeviLamina 26.51">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="AGPL-3.0 license"></a>
+</p>
 
-  <p>
-    <a href="docs/getting-started.zh-CN.md">开始使用</a>
-    ·
-    <a href="https://github.com/wo55555/Playback/releases">发行版本</a>
-    ·
-    <a href="CHANGELOG.md">更新日志</a>
-    ·
-    <a href="https://github.com/wo55555/Playback/issues">问题反馈</a>
-    ·
-    <a href="CONTRIBUTING.md">参与贡献</a>
-    ·
-    <a href="#行为准则">行为准则</a>
-    ·
-    <a href="README.md">English</a>
-  </p>
+这是 [wo55555/Playback](https://github.com/wo55555/Playback)（基于 LeviLamina 的 Minecraft **基岩版**回放录制与镜头编辑 MOD）的分支。
+它让**录制可以在游戏内完成**，并在你游玩的同时把录像转换成 **Java 版 [Flashback](https://github.com/Moulberry/Flashback) 回放**。
 
-  <p>
-    <a href="https://discord.gg/qKrT38mFh7"><img src="https://img.shields.io/discord/1531092797367652403?style=for-the-badge&amp;logo=discord" alt="Playback Discord 在线人数"></a>
-    <a href="https://qm.qq.com/q/ufJatMDcha"><img src="https://img.shields.io/badge/QQ-%E5%8A%A0%E5%85%A5%E7%BE%A4%E8%81%8A-EA0000?style=for-the-badge&amp;logo=qq&amp;logoColor=white" alt="加入 Playback QQ 群"></a>
-  </p>
-</div>
+- **不离开游戏即可录制**：除命令外，还有快捷键、屏幕指示和控制面板。
+- **实时生成 Flashback 回放**：录像被送到 [FlashBridge](https://github.com/liNoyn/FlashBridge)，录制的同时就在转换。停止录制时，Flashback 的列表里已经有这段回放。
+- **即时回放**：像 NVIDIA 即时回放一样持续保留最近 15 秒到 20 分钟，一个快捷键即可保存。
+- **自动录制**：按世界名、服务器名、维度的规则自动开始录制。
+- **回放库**：收藏、标签、备注、Flashback 状态，以及事后转换。
+- **卡顿修正**：即使服务器卡顿，也按正常速度播放。
+
+回放的播放与编辑（时间线、镜头关键帧、视频导出）沿用上游，没有改动。本分支与上游作者无关。
 
 > [!WARNING]
-> Playback 目前仍处于早期开发阶段，现有公开版本均为预发布版本。请备份重要世界和录制文件；在 Minecraft、LeviLamina 或 Playback 版本发生变化后，不保证旧回放仍然兼容。
+> 预发布版本。下面的录制功能较新，在游戏内的测试还很有限，请为重要的世界和录像做好备份。仅支持 Minecraft 基岩版 1.26.51 / LeviLamina 26.51 线（上游的 `mc26.50` 线），Windows x64。
 
-Playback 将客户端可见的 Minecraft 基岩版游戏过程录制为便携回放文件，在隔离的本地回放世界中重建场景，并提供基于时间线的电影相机关键帧。当前还提供供测试使用的 MP4 和 PNG 序列导出。
+## 安装
 
-## 快速开始
+1. 先按[上游指南](docs/getting-started.md)在 LeviLamina 26.51 客户端实例中安装上游 Playback（本分支会就地替换其文件）。
+2. *（需要 Flashback 回放时）* 安装 [FlashBridge](https://github.com/liNoyn/FlashBridge/releases)：解压并运行 `install.ps1`，选择接收回放的、装有 Flashback 的实例。
+3. 关闭 Minecraft，从 [Releases](https://github.com/liNoyn/Playback/releases) 下载最新 zip，解压后运行：
+   ```
+   powershell -ExecutionPolicy Bypass -File install-live.ps1
+   ```
+   这会替换所有装有 Playback 的 LeviLauncher 游戏版本中的 `playback.dll`、`manifest.json` 和语言文件。`mods\playback\data` 中的录像与设置会保留，原文件备份在 `%USERPROFILE%\.flashbridge\backup`（`install-live.ps1 -Restore` 可还原）。
 
-> [!IMPORTANT]
-> 建议尽量使用干净的 LeviLamina 客户端实例；目前不保证与其他模组广泛兼容。
+没有 FlashBridge 时，除 Flashback 转换外的功能都可使用。
 
-1. 为目标 Minecraft 版本创建或选择干净的 LeviLamina 客户端实例。
-2. 通过 LeviLauncher/Lip 或发行压缩包安装匹配的 Playback `#client` 版本。
-3. 启动游戏，使用 `record start` / `record pause` / `record stop` 录制，然后从主菜单的 **Playback** 浏览器打开导出的回放。
+## 使用
 
-截图、完整 Lip 命令、手动安装以及录制回放说明见[安装与使用指南](docs/getting-started.zh-CN.md)。
+| 操作 | 默认按键 | 命令 |
+|---|---|---|
+| 开始 / 停止录制 | `F8` | `/record start` / `/record stop` |
+| 打开面板（先选择输出） | `Ctrl+F8`、`F6` | `/record panel`、`/record start playback\|both\|flashback` |
+| 暂停 / 继续 | `Shift+F8` | `/record pause` |
+| 添加标记 | `F7` | `/record marker [名称]` |
+| 保存即时回放 | `F9` | |
+| 即时回放 开 / 关 | `Shift+F9` | |
+| 查看状态 | | `/record status` |
+| 版本 | | `/playback version` |
 
-## 运行展示
+在聊天输入或打开菜单时按键不会响应，所有按键都可在 `settings.json` 中修改。
 
-<p align="center">
-  <strong>主菜单入口</strong><br>
-  <img src="docs/images/showcase/zh-cn/main-menu.webp" alt="Minecraft 主菜单中的 Playback 入口" width="900">
-</p>
+录制时右上角会显示小型指示（时间、剩余空间、服务器卡顿时的 TPS、FlashBridge 状态、标记数），下方显示通知。位置、不透明度和内容可调，也可以隐藏指示以免出现在录屏里。
 
-<p align="center">
-  <strong>原生回放浏览器</strong><br>
-  <img src="docs/images/showcase/zh-cn/replay-browser.webp" alt="Playback 回放浏览器" width="900">
-</p>
+**控制面板（`F6`）**
+- 录制：开始、停止、暂停、标记；本次录制的输出与转换时机；状态与剩余空间。
+- 设置：默认输出、原录像的处理、时间修正、即时回放、自动录制规则、屏幕显示、磁盘上限、语言。
+- 状态：FlashBridge 状态与最近结果、恢复未保存的录像、回收站、复制诊断信息。
 
-<p align="center">
-  <strong>回放预览与文件详情</strong><br>
-  <img src="docs/images/showcase/zh-cn/replay-details.webp" alt="Playback 回放预览、元数据和文件操作" width="900">
-</p>
+### 输出模式
 
-<p align="center">
-  <strong>游戏内时间线编辑器</strong><br>
-  <img src="docs/images/showcase/zh-cn/timeline-editor.webp" alt="Playback 游戏内时间线编辑器" width="900">
-</p>
+| 输出 | 保留内容 |
+|---|---|
+| 仅 Playback | Playback 录像（不转换） |
+| 两者（默认） | Playback 录像和 Flashback 回放 |
+| 仅 Flashback | Flashback 回放。Playback 录像只有在 FlashBridge 重新打开并验证了 Flashback 回放之后才会移入 `data\trash`，7 天后删除（也可改为一直保留或验证后立即删除）。转换失败或未验证时，原录像一定保留 |
 
-> [!NOTE]
-> 目前的 UI 仍在积极开发中，当前 UI 界面不代表最终效果。
+转换时机可选**录制时**（停止的瞬间 Flashback 回放就完成）或**停止后**（游玩时没有额外负担）。未设置 FlashBridge 时只录制 Playback。
 
-## Minecraft 基岩版回放与相机功能
+### 即时回放
 
-- **游戏录制** — 捕获已加载区块、方块实体、实体移动、玩家状态、时间和经过筛选的客户端安全数据包。
-- **多人服务器区块兼容** — 保留本地世界的区块处理方式，并针对采用其他区块传输方式的服务器，在客户端完成解码后录制可移植的回放数据。
-- **低开销写入** — 异步写入回放快照和时间线数据，减少录制过程中的卡顿。
-- **便携归档** — 将录制结果导出为便于保存和分享的回放文件。
-- **隔离回放** — 通过原生主菜单回放浏览器，在独立的本地回放世界中打开录制内容。
-- **回放浏览器** — 支持搜索、导入、筛选、排序、重命名、删除和打开回放，并提供平铺与列表视图。
-- **回放缩略图** — 在游戏未打开菜单时尝试为录制内容捕获预览图。
-- **时间线控制** — 支持播放、暂停、跳转、倍速调整和快速定位。
-- **时间线编辑器** — 提供可缩放轨道、可调整面板、相机/序列/实体片段编辑，以及撤销与重做；工程随回放数据保存，重新打开时自动恢复。
-- **服务器自定义方块与维度** — 注册从服务器录制的方块类型，并按名称解析自定义维度，让模组服务器的世界以自身的几何、材质和维度布局回放。
-- **电影相机关键帧** — 记录位置、偏航、俯仰、滚转和 FOV，并支持平滑、线性、缓入缓出、保持、Hermite 与三次贝塞尔插值。
-- **维度感知相机路径** — 每次维度变化都会切断相机轨道，预览和导出不会在不同世界之间错误插值。
-- **实验性视频导出** — 将指定 tick 区间渲染为 H.264 MP4 或 PNG 序列，可配置帧率、分辨率、SSAA、预热帧和光追收敛帧。
-- **D3D11 与 D3D12 采集** — 支持两种原生渲染后端；D3D12 支持 1x/2x/4x SSAA，D3D11 使用 1x。
-- **双语界面** — 为命令、原生回放界面和资源包主菜单按钮提供英文及简体中文本地化。
+在面板（`F6` →“设置”）或用 `Shift+F9` 开启。游玩时持续保留最近一段（默认 2 分钟），按 **`F9` 保存**为 `…-instant.zip`（标签 `instant`，按输出模式转换）。
 
-## 本版更新
+- **可与录制并行**：录制中按 `F9` 只截取最近一段，录制不会停止；若在录制途中开启，则从下一次录制起生效。
+- 保存在后台进行。保存的片段最多比设定长度长一个分段（分段为长度的 1/3 与 30 秒中较短者），因为每个分段都从完整的世界快照开始。
+- 每个分段都会取一次世界快照，会带来周期性的短暂负载。如有影响，请调大 `instantReplay.chunkSeconds`。
+- 磁盘占用上限为 `instantReplay.maxMegabytes`（默认 2048MB）。离开世界或退出游戏时缓冲会被丢弃，只保留你用 `F9` 保存的内容。
 
-`v0.3.3` 是面向 MC 26.10、MC 26.20、MC 26.40 和 MC 26.51 的导出向预发布版本。视频导出在新增的可折叠「高级设置」中提供编码速度与 CRF 选项和实验性的客户端加速选项，丢失的场景采样不再等待超时而是立即重渲，收敛帧默认改为 0（上限 1000）。导出期间会关闭游戏的节能模式并在结束后恢复，导出中断后也会恢复。导出对话框重新分组，回放列表与时间轴缩放条经过重绘，分隔条显示抓手光标。
+### 自动录制
 
-> [!CAUTION]
-> Playback 当前发布的仍是预发布版本，可能直接进行破坏性的格式或配置更新。早于 `v0.2.0` 的版本创建的回放不兼容，必须重新录制。受影响服务器在 2026 年 8 月 20 日热更新前录制的回放可能已经缺少可移植区块或自定义实体注册数据，这类归档无法修复，也必须重新录制；同一发行线上 `v0.2.0` 及之后版本录制的完整回放与 `v0.3.3` 兼容，无需转换。配置版本、录制文件的快照上下文版本和编辑器工程格式版本均为 `1`，不提供迁移层。
+在面板“设置”→“自动录制”中，按**世界名、服务器名、维度**添加规则（可用 `*` 和 `?`，如 `*.example.net`）。进入世界约 3 秒后，应用第一条匹配的规则：
 
-> [!IMPORTANT]
-> 主菜单中的 **Playback** 按钮仍依赖轻量 UI 资源包。通过 Lip 或完整 Release ZIP 安装时，资源包会放入 `mods/playback/resource_packs/playback-ui/`；Release 同时提供 `playback-ui.mcpack` 供单独手动导入。
+| 动作 | 效果 |
+|---|---|
+| 录制 | 开始录制（输出按规则，未指定则用默认） |
+| 询问 | 只通知“按 F8 开始录制” |
+| 不录制 | 此世界不自动录制，也不运行即时回放 |
 
-完整发行历史与详细变更见[更新日志](CHANGELOG.md)。
+“为当前世界/服务器添加规则”可按所在位置生成规则。离开世界时录制照常停止。服务器名取自游戏的连接处理；取不到时，带服务器条件的规则不会匹配。
 
-## 兼容性
+### 回放库
 
-Playback 针对不同 Minecraft 与 LeviLamina 版本维护独立发行线。产品版本 `0.3.3` 已为下表所有运行时发布；请安装与当前实例匹配的版本。四个版本均为预发布版本。
+回放浏览器（主菜单 → Playback）新增**收藏**（星标）、**标签**和**备注**（可搜索，保存在 `data\library.json`，不修改回放文件）、**Flashback 徽标**和事后转换的 **Flashback 按钮**（可多选，原回放保留），以及收藏/已转换/未转换筛选。重命名或删除回放时，这些数据也会随之转移或删除。
 
-| Minecraft / LeviLamina | Playback 版本                                                                       | 状态   |
-| ---------------------- | ----------------------------------------------------------------------------------- | ------ |
-| `26.10.*`              | [`v0.3.3-mc26.10`](https://github.com/wo55555/Playback/releases/tag/v0.3.3-mc26.10) | 预发布 |
-| `26.20.*`              | [`v0.3.3-mc26.20`](https://github.com/wo55555/Playback/releases/tag/v0.3.3-mc26.20) | 预发布 |
-| `26.40.*`              | [`v0.3.3-mc26.40`](https://github.com/wo55555/Playback/releases/tag/v0.3.3-mc26.40) | 预发布 |
-| `26.51.*`              | [`v0.3.3-mc26.50`](https://github.com/wo55555/Playback/releases/tag/v0.3.3-mc26.50) | 预发布 |
+### 卡顿修正
 
-所有发行线均面向 Windows x64 平台的 Minecraft 基岩版，并以纯客户端模组形式发布。
+录像的每个 tick 都带有实际时间和网络包上标注的服务器 tick（`tick_info`）。FlashBridge 据此按**游戏时间**排列 Flashback 回放：10 TPS 的服务器也按正常速度播放，追赶的部分会被插值，卡顿区间会加上标记（也可选实际时间或按录制原样）。修正发生在转换时，录像本身不变。
 
-> [!NOTE]
-> MC 26.20 有意跳过 `0.2.0` 版本。该运行时上的视频导出无法工作：26.20 头文件错误声明了结构体对齐，导致采集路径从填充字节读取渲染项数量，把所有提交都判定为纯覆盖层，每次导出都卡在第 0 帧。因此 26.20 发行线从 `v0.1.2-mc26.20` 直接进入包含该修复的 `v0.2.1-mc26.20`。MC 26.10 发行线不受影响，已正常发布 `v0.2.0-mc26.10`。
+含 `tick_info` 的录像无法被上游 Playback 读取。如需上游可读的录像，请开启“兼容格式”（`recording.compatibleFormat`），此时无法修正卡顿。
 
-> [!TIP]
-> Playback 为纯客户端模组，支持在本地世界和多人服务器中录制游戏过程。
+### 其他
 
-## 从源码构建
+- **标记**保存在录像中，会成为 Flashback 的标记。
+- **崩溃恢复**：可发现崩溃遗留的录像（`data\temp`）并在面板中恢复（最多丢失最近 5 分钟）。
+- **磁盘保护**：剩余空间低于 3GB 时警告，低于 1GB 时停止并保存录制。
+- **语言**：英语、日语、简体中文（跟随游戏语言）。
 
-Playback 使用 Visual Studio 2022、xmake 和 Git 在 Windows x64 上构建。干净 Release 构建命令、输出结构和依赖排错见[源码构建指南](docs/building.zh-CN.md)。
+## 设置
 
-## 命令
-
-| 命令               | 说明                           |
-| ------------------ | ------------------------------ |
-| `playback version` | 显示当前加载的 Playback 版本。 |
-| `record start`     | 开始或继续录制当前世界。       |
-| `record pause`     | 暂停当前录制。                 |
-| `record stop`      | 停止录制并导出回放。           |
-
-## 语言
-
-Playback 目前提供英文（`en_US`）和简体中文（`zh_CN`）翻译，翻译文件位于 `src/lang/`。
-
-## 常见问题
-
-### Playback 是什么？
-
-Playback 是面向 Windows x64 LeviLamina 客户端的 Minecraft 基岩版回放录制与相机编辑模组。它会保存客户端可见的会话数据，并在独立的本地回放世界中重建。
-
-### Playback 可以录制多人服务器吗？
-
-可以。Playback 是纯客户端模组，可录制本地世界或多人会话中客户端实际看到的区块、实体和经过筛选的数据包。2026 年 8 月 20 日热更新改进了采用其他区块传输方式或自定义实体注册表的服务器录制；修复前从未保存的数据无法恢复，受影响的回放可能需要重新录制。
-
-### Playback 可以将回放导出为视频吗？
-
-`v0.3.3` 提供实验性的 H.264 MP4 和 PNG 序列导出。目前仍存在已知限制，并且不包含音频。
-
-### 相机关键帧会跨维度插值吗？
-
-不会。每次已录制的维度变化都会切断相机时间线，即使经过的中间维度没有相机关键帧也一样。
-
-### 应该安装哪个 Playback 版本？
-
-Minecraft/LeviLamina `26.10.*` 使用 `v0.3.3-mc26.10`，`26.20.*` 使用 `v0.3.3-mc26.20`，`26.40.*` 使用 `v0.3.3-mc26.40`，`26.51.*` 使用 `v0.3.3-mc26.50`。上述四个版本均为预发布版本。不要混装不同发行线，参见[兼容性](#兼容性)。
-
-## 开发状态与计划
-
-- 录制、回放、相机和导出工作流仍在持续构建与优化中。
-- 后续将重点调试多人服务器会话的录制与回放，欢迎测试并反馈问题。
-- 后续计划包括音频导出、更广泛的渲染器兼容和更多相机工具。
-
-> [!TIP]
-> **测试重点：** 报告相机、跨维度、区块加载或导出问题时，请附上回放文件、日志、GPU、渲染后端和导出设置。
+`mods\playback\data\settings.json`。在面板中的修改会立即保存，未知的键会保留。FlashBridge 的 `setup-live` 会写入 `liveStream`（旧版的 `live.json` 会在首次启动时导入）。示例见[英文说明](README.md#settings)。
 
 ## 已知限制
 
-- 回放格式仍在开发中，Alpha 版本之间可能发生变化。
-- Playback 重建的是已录制的客户端可见状态，并不是原始服务器模拟过程的确定性副本。
-- 当前不会将待处理的计划刻以及村庄、袭击、POI 等服务端系统保存为权威模拟状态。
-- 实验性视频导出当前生成无音频的 H.264 MP4 或 PNG 序列，尚未实现音频导出，并且仍可能存在运行时问题。
-- 暂不支持灵动视效（Vibrant Visuals）。录制、回放和导出仅在标准渲染器下验证，使用 Playback 前请关闭灵动视效。
-- D3D12 的 SSAA 上限为 4x（超采样渲染尺寸放不下时更低），D3D11 使用 1x。
-- 相机只能渲染回放数据中实际存在的区块，无法重建从未录制的地形。
-- 2026 年 8 月 20 日的修复无法追溯恢复现有回放归档中已经缺失的服务器区块或自定义实体注册数据。
-- Minecraft 或 LeviLamina 更新后，需要重新确认兼容性。
+- 目前还没有暂停菜单中的按钮，请用 `F6` 打开面板。
+- 新功能在游戏内的测试还不充分。请连同 `logs\latest.log`、FlashBridge 日志（`%USERPROFILE%\.flashbridge\logs\live.log`）和所用版本一起反馈问题。
+- 只构建基岩版 1.26.51 / LeviLamina 26.51 线。用其他游戏版本录制的回放与上游一样不兼容。
+- 播放与导出沿用上游的限制（回放是对客户端所见内容的重建，视频导出为实验性且无声，不支持 Vibrant Visuals）。
+- 服务器附加包的自定义物品不会转换到 Flashback（仅支持原版物品表）。
 
-报告可复现问题时，请尽量附带日志、相关版本和最小回放文件。
+## 与上游的区别
 
-如需报告可复现问题，请[创建 Issue](https://github.com/wo55555/Playback/issues)。
+- 录像通过本机回环 TCP 实时送往本地转换器，录制从不等待网络（协议 2，转换器回报状态与验证结果）。转换器缺失或太慢时录制照常，改为转换导出的文件。
+- 新动作 `tick_info`（位于每个 `next_tick` 之前），以及 `metadata.json` 中的 `markers` / `features` / `tickSource`。
+- Recorder 缓冲模式、`ReplayCompactor`（从缓冲中截取即时回放）、`settings.json`、快捷键/屏幕指示/面板、回放库数据、自动录制规则。
+- 以 C++23 构建（LeviLamina 26.51.7 的头文件使用 `std::to_underlying`）；`--bundle_ffmpeg=n` 可跳过 FFmpeg 的构建。
 
-## 参与贡献
+协议与构建说明见 [docs/live-stream.md](docs/live-stream.md)（英文），设计见 [docs/design/recording-ux-and-time-normalization.md](docs/design/recording-ux-and-time-normalization.md)（日文）。
 
-构建说明见[源码构建指南](docs/building.zh-CN.md)，格式化和 Pull Request 流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+## 从源码构建
 
-请阅读并遵守 [行为准则](CODE_OF_CONDUCT.md)。参与本项目即表示你同意遵守其中条款。
+需要 Windows x64 与 Visual Studio 2022 Build Tools（C++）；Git、xmake、LLVM 使用 `%USERPROFILE%\.toolchains` 中的版本。
 
-安全问题请按照 [SECURITY.md](SECURITY.md) 私下报告，不要为安全漏洞创建公开 Issue。
+```
+powershell -ExecutionPolicy Bypass -File build-live.ps1
+```
 
-## 行为准则
+输出在 `bin\playback`。详见 [docs/building.zh-CN.md](docs/building.zh-CN.md)（上游）。
 
-Playback 采用 Contributor Covenant 行为准则。请在参与 Issue、Pull Request、Discussion 或社区空间之前阅读 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
+## 致谢与许可证
 
-## 致谢
+Playback 由 [wo555](https://github.com/wo55555) 及贡献者开发。本分支以其为基础，感谢上游、[LeviLamina](https://github.com/LiteLDev/LeviLamina) 项目，以及其回放格式被 FlashBridge 写出的 [Flashback](https://github.com/Moulberry/Flashback)。
 
-特别感谢 [LeviLamina](https://github.com/LiteLDev/LeviLamina) 的维护者与社区提供原生模组开发平台和工具，使 Playback 得以实现；同时感谢 [Flashback](https://github.com/Moulberry/Flashback) 项目及其贡献者，其回放理念与架构为 Playback 提供了重要启发。
-
-## 许可证
-
-Copyright (C) 2026 [wo555](https://github.com/wo55555)
-
-Playback 采用 [GNU Affero 通用公共许可证 v3.0](LICENSE) 发布。分发修改版本时必须继续使用 AGPL-3.0，并提供对应源代码。第三方组件保留各自许可证，详情见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 `licenses/` 目录。
+Copyright (C) 2026 [wo555](https://github.com/wo55555) 及本分支贡献者。以 [GNU Affero General Public License v3.0](LICENSE) 发布，修改后的版本须继续以 AGPL-3.0 提供源码。第三方组件遵循各自的许可证，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 `licenses/`。

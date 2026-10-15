@@ -1,232 +1,204 @@
-# Playback
+# Playback (live-stream fork)
 
-[English](README.md) | [日本語](README.ja.md)
+[English](README.md) | [日本語](README.ja.md) | [简体中文](README_ZH.md)
 
-> **Live-stream fork.** This is [wo55555/Playback](https://github.com/wo55555/Playback) plus recording extensions:
-> the recording is mirrored to a local converter ([FlashBridge](https://github.com/liNoyn/FlashBridge)) that turns it
-> into a Java Edition [Flashback](https://github.com/Moulberry/Flashback) replay, finished the moment you stop;
-> hotkeys (F8 record / Shift+F8 pause / F7 marker / F6 panel / F9 save the last minutes), an on-screen recording indicator, a control panel, an instant replay buffer, auto-record rules, a library with favorites, tags, notes and Flashback conversion,
-> output modes (Playback only / both / Flashback only), lag-corrected replays (`tick_info`), markers, crash recovery
-> and a low-disk guard, all configured in `mods/playback/data/settings.json`. Replaying and editing are unchanged.
-> Install with `install-live.ps1` from the Releases page; protocol and build notes are in
-> [docs/live-stream.md](docs/live-stream.md), the design in
-> [docs/design/recording-ux-and-time-normalization.md](docs/design/recording-ux-and-time-normalization.md).
-> Not affiliated with the upstream author.
+<p>
+  <a href="https://github.com/liNoyn/Playback/releases"><img src="https://img.shields.io/github/v/release/liNoyn/Playback?include_prereleases&style=flat-square" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Minecraft%20Bedrock-1.26.51%20(Windows%20x64)-62b47a?style=flat-square" alt="Minecraft Bedrock 1.26.51, Windows x64">
+  <img src="https://img.shields.io/badge/LeviLamina-26.51.*-7b68ee?style=flat-square" alt="LeviLamina 26.51">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="AGPL-3.0 license"></a>
+</p>
 
-<div align="center">
-  <img src="assets/pack_icon.png" alt="Playback icon" width="160">
-  <h1>Playback</h1>
-  <p><strong>Record, revisit, and replay Minecraft Bedrock.</strong></p>
-  <p>An open-source Minecraft Bedrock replay recorder and cinematic camera editor for LeviLamina on Windows, with experimental video export.</p>
+A fork of [wo55555/Playback](https://github.com/wo55555/Playback), the Minecraft **Bedrock** replay recorder and
+camera editor for LeviLamina, that makes **recording** a first-class part of the game and turns recordings into
+**Java Edition [Flashback](https://github.com/Moulberry/Flashback) replays** while you play.
 
-  <p>
-    <img src="https://img.shields.io/badge/release-v0.3.3-4c8bf5?style=flat-square" alt="Playback v0.3.3">
-    <img src="https://img.shields.io/badge/Minecraft%20Bedrock-Windows%20x64-62b47a?style=flat-square" alt="Minecraft Bedrock for Windows x64">
-    <img src="https://img.shields.io/badge/LeviLamina-26.51.*-7b68ee?style=flat-square" alt="LeviLamina 26.51">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="AGPL-3.0 license"></a>
-  </p>
+- **Record without leaving the game**: hotkeys, an on-screen indicator and a control panel instead of only commands.
+- **Flashback replays, live**: the recording is streamed to [FlashBridge](https://github.com/liNoyn/FlashBridge), which
+  converts it as you record. Stop recording and the Flashback replay is already in Flashback's list.
+- **Instant replay**: always keeps the last stretch (15 s - 20 min), like NVIDIA Instant Replay; one hotkey saves it.
+- **Auto-record**: rules by world / server / dimension.
+- **Replay library**: favorites, tags, notes, Flashback state, and converting old replays afterwards.
+- **Lag-corrected replays**: a laggy server is played back at normal speed.
 
-  <p>
-    <img src="https://img.shields.io/badge/LeviLamina-26.10.*-7b68ee?style=flat-square" alt="LeviLamina 26.10">
-    <img src="https://img.shields.io/badge/LeviLamina-26.20.*-7b68ee?style=flat-square" alt="LeviLamina 26.20">
-    <img src="https://img.shields.io/badge/LeviLamina-26.40.*-7b68ee?style=flat-square" alt="LeviLamina 26.40">
-    <img src="https://img.shields.io/badge/LeviLamina-26.51.*-7b68ee?style=flat-square" alt="LeviLamina 26.51">
-  </p>
-
-  <p>
-    <a href="docs/getting-started.md">Get started</a>
-    ·
-    <a href="https://github.com/wo55555/Playback/releases">Releases</a>
-    ·
-    <a href="CHANGELOG.md">Changelog</a>
-    ·
-    <a href="https://github.com/wo55555/Playback/issues">Report an issue</a>
-    ·
-    <a href="CONTRIBUTING.md">Contributing</a>
-    ·
-    <a href="#code-of-conduct">Code of Conduct</a>
-    ·
-    <a href="README_ZH.md">简体中文</a>
-  </p>
-
-  <p>
-    <a href="https://discord.gg/qKrT38mFh7"><img src="https://img.shields.io/discord/1531092797367652403?style=for-the-badge&amp;logo=discord" alt="Playback Discord online member count"></a>
-    <a href="https://qm.qq.com/q/ufJatMDcha"><img src="https://img.shields.io/badge/QQ-Join%20group-EA0000?style=for-the-badge&amp;logo=qq&amp;logoColor=white" alt="Join the Playback QQ group"></a>
-  </p>
-</div>
+Replaying and editing replays (timeline, camera keyframes, video export) are inherited from upstream and unchanged.
+This fork is not affiliated with the upstream author.
 
 > [!WARNING]
-> Playback is still in an early stage of development. All currently published releases are prereleases. Keep backups of important worlds and recordings; replay compatibility is not guaranteed across Minecraft, LeviLamina, or Playback version changes.
+> Pre-release software. The recording features below are new and have had limited testing in the game, so keep
+> backups of important worlds and recordings. Only the Minecraft Bedrock 1.26.51 / LeviLamina 26.51 line is
+> supported (the upstream `mc26.50` line), on Windows x64.
 
-Playback records client-visible Minecraft Bedrock sessions into portable replay archives, opens them in an isolated local replay world, and provides timeline-based cinematic camera keyframes. Experimental MP4 and PNG-sequence export is available for testing.
+## Install
 
-## Quick Start
+1. Install upstream Playback for your LeviLamina 26.51 client instance first, as described in the
+   [upstream guide](docs/getting-started.md). The fork replaces its files in place.
+2. *(Optional, for Flashback replays)* Install [FlashBridge](https://github.com/liNoyn/FlashBridge/releases): extract
+   the zip and run `install.ps1`; it asks which Minecraft instances with Flashback should receive replays.
+3. Close Minecraft, download the latest zip from [Releases](https://github.com/liNoyn/Playback/releases), extract it
+   and run:
+   ```
+   powershell -ExecutionPolicy Bypass -File install-live.ps1
+   ```
+   This replaces `playback.dll`, `manifest.json` and the language files of every LeviLauncher game version that has
+   Playback. Recordings and settings in `mods\playback\data` stay. The originals are saved to
+   `%USERPROFILE%\.flashbridge\backup`; `install-live.ps1 -Restore` puts them back.
 
-> [!IMPORTANT]
-> Use a clean LeviLamina client instance when possible. Broad compatibility with other mods is not currently guaranteed.
+Without FlashBridge everything except Flashback conversion works as usual.
 
-1. Create or select a clean LeviLamina client instance for the target Minecraft version.
-2. Install the matching Playback `#client` release through LeviLauncher/Lip or from the release ZIP.
-3. Launch the game, record with `record start` / `record pause` / `record stop`, then open the exported replay from the main-menu **Playback** browser.
+## Using it
 
-See the [installation and usage guide](docs/getting-started.md) for screenshots, exact Lip commands, manual installation, recording, and replay instructions.
+| Action | Default key | Command |
+|---|---|---|
+| Start / stop recording | `F8` | `/record start` / `/record stop` |
+| Open the panel (choose the output first) | `Ctrl+F8`, `F6` | `/record panel`, `/record start playback\|both\|flashback` |
+| Pause / resume | `Shift+F8` | `/record pause` |
+| Place a marker | `F7` | `/record marker [name]` |
+| Save the instant replay | `F9` | |
+| Instant replay on / off | `Shift+F9` | |
+| Show the state | | `/record status` |
+| Version | | `/playback version` |
 
-## Showcase
+Keys are ignored while typing in chat or with a menu open, and can all be changed in `settings.json`.
 
-<p align="center">
-  <strong>Main menu integration</strong><br>
-  <img src="docs/images/showcase/en/main-menu.webp" alt="Playback entry on the Minecraft main menu" width="900">
-</p>
+While recording, a small indicator in the top-right corner shows the time, free disk space, server TPS (when it lags),
+the FlashBridge state and the number of markers; notifications appear below it. Position, opacity and contents are
+configurable, and the indicator can be hidden so it stays out of screen captures.
 
-<p align="center">
-  <strong>Native replay browser</strong><br>
-  <img src="docs/images/showcase/en/replay-browser.webp" alt="Playback replay browser" width="900">
-</p>
+**Control panel (`F6`)**
+- *Record*: start, stop, pause, marker; the output and conversion timing for this recording; state and free space.
+- *Settings*: default output, what happens to originals, time correction, instant replay, auto-record rules, on-screen
+  display, disk limits, language.
+- *Status*: FlashBridge state and last result, recovery of unsaved recordings, trash, copy diagnostics.
 
-<p align="center">
-  <strong>Replay preview and file details</strong><br>
-  <img src="docs/images/showcase/en/replay-details.webp" alt="Playback replay preview, metadata, and file actions" width="900">
-</p>
+### Output modes
 
-<p align="center">
-  <strong>In-game timeline editor</strong><br>
-  <img src="docs/images/showcase/en/timeline-editor.webp" alt="Playback in-game timeline editor" width="900">
-</p>
+| Output | What you keep |
+|---|---|
+| Playback only | the Playback recording; nothing is converted |
+| Both (default) | the Playback recording and a Flashback replay |
+| Flashback only | the Flashback replay. The Playback recording is moved to `data\trash` only after FlashBridge has re-opened and verified the Flashback replay, and is deleted after 7 days (or kept / deleted at once, as configured). A failed or unverified conversion never costs you the original. |
 
-> [!NOTE]
-> The UI is still under active development, and the current interface does not represent the final design.
+Conversion runs **while recording** (the Flashback replay is complete the moment you stop) or **after stop** (no extra
+load while playing). Without FlashBridge set up, recordings are made for Playback only.
 
-## Minecraft Bedrock Replay and Camera Features
+### Instant replay
 
-- **Session capture** — Records loaded chunks, block actors, entity movement, player state, time, and selected client-safe game packets.
-- **Multiplayer chunk compatibility** — Preserves local-world chunk handling while capturing portable replay data after client decoding on servers that use alternate chunk transport modes.
-- **Low-impact recording** — Writes replay snapshots and timeline data asynchronously to reduce recording stalls.
-- **Portable archives** — Exports recordings as replay files that are easy to store and share.
-- **Isolated playback** — Opens recordings from a native main-menu browser in a dedicated local replay world.
-- **Replay browser** — Searches, imports, filters, sorts, renames, deletes, and opens replay files, with grid and list views.
-- **Replay thumbnails** — Captures a preview image during recording when the game is in a menu-free state.
-- **Timeline controls** — Supports play, pause, seek, speed control, and quick navigation during replay.
-- **Timeline editor** — Provides zoomable tracks, resizable panels, camera/sequence/entity-segment editing, and undo/redo, with projects saved next to the replay data and restored on reopen.
-- **Server custom blocks and dimensions** — Registers block types recorded from the server and resolves custom dimensions by name, so modded worlds replay with their own geometry, materials, and dimension layout.
-- **Cinematic camera keyframes** — Captures position, yaw, pitch, roll, and FOV with Smooth, Linear, Ease, Hold, Hermite, and Cubic Bezier interpolation.
-- **Dimension-aware camera paths** — Splits camera tracks at every dimension change so preview and export never interpolate through unrelated worlds.
-- **Experimental video export** — Renders a selected tick range to H.264 MP4 or PNG sequences with configurable frame rate, resolution, SSAA, warm-up frames, and ray-traced convergence frames.
-- **D3D11 and D3D12 capture** — Supports the native renderer on both backends; D3D12 supports 1x/2x/4x SSAA and D3D11 uses 1x.
-- **Bilingual UI** — Localizes commands, the native replay UI, and the resource-pack main-menu button in English and Simplified Chinese.
+Turn it on in the panel (`F6` → Settings) or with `Shift+F9`. While you play, the last stretch (default 2 minutes) is
+kept; **`F9` saves it** as a replay named `...-instant.zip` (tagged `instant`), converted according to the output mode.
 
-## Latest Changes
+- It runs **alongside recording**: during a recording `F9` cuts out the recent part without stopping the recording.
+  If you turn it on during a recording, it applies from the next one.
+- Saving happens in the background. A saved clip can be up to one chunk longer than the set length (a chunk is a third
+  of the length or 30 s, whichever is shorter), because chunks start from a full world snapshot.
+- Each chunk takes a world snapshot, a short periodic load. Raise `instantReplay.chunkSeconds` if you notice it.
+- Disk use is capped by `instantReplay.maxMegabytes` (2048 by default). The buffer is dropped when you leave the world
+  or quit; only what you save with `F9` is kept.
 
-`v0.3.3` is an export-focused prerelease published for MC 26.10, MC 26.20, MC 26.40, and MC 26.51. Video export gains encode speed and CRF settings and an experimental client acceleration option in a new collapsible Advanced section, re-renders missed scene samples without a timeout, and now defaults convergence frames to 0 (up to 1000). Eco Mode is switched off while an export runs and restored afterwards, even after an interrupted export. The export dialog is regrouped, the replay list and timeline zoom bar are restyled, and splitters show a hand cursor.
+### Auto-record
 
-> [!CAUTION]
-> Playback releases are still prereleases and may make destructive format or configuration changes. Replay archives from releases before `v0.2.0` are incompatible and must be recorded again. Replays recorded before the August 20, 2026 hotfix on affected servers may already be missing portable chunk or custom-entity registry data; those archives cannot be repaired and must also be recorded again. Complete archives recorded with `v0.2.0` or later on the same release line are compatible with `v0.3.3` and require no conversion. The configuration version, recording-file snapshot context version, and editor project format version are all `1`; no migration layer is provided.
+In the panel (Settings → Auto-record), add rules that match the **world name, server name and dimension** (`*` and `?`
+work, e.g. `*.example.net`). When you join a world, the first matching rule applies (checked about 3 seconds after
+joining):
 
-> [!IMPORTANT]
-> The **Playback** main-menu button still uses a lightweight UI resource pack. Complete Lip and release-ZIP installations include it under `mods/playback/resource_packs/playback-ui/`; the Release also provides `playback-ui.mcpack` for standalone manual import.
+| Action | Effect |
+|---|---|
+| Record | start recording (output per rule, or the default) |
+| Ask | only show a notification that F8 starts recording |
+| Don't record | no automatic recording or instant replay in this world |
 
-See the full [changelog](CHANGELOG.md) for release history and detailed changes.
+"Add a rule for this world / server" creates one for where you are. Leaving the world stops a recording as before.
+The server name is read from the game's join handler; if that is unavailable, rules with a server condition do not match.
 
-## Compatibility
+### Replay library
 
-Playback maintains separate release lines for Minecraft and LeviLamina versions. Product version `0.3.3` is published for every runtime listed below; install the release that matches your instance. All four are prereleases.
+The replay browser (main menu → Playback) gains **favorites** (star), **tags** and **notes** (searchable, stored in
+`data\library.json`; replay files are not touched), a **Flashback badge** and a **Flashback button** that converts
+existing replays afterwards (several at once, originals stay), and filters for favorites and converted / not converted.
+Renaming or deleting a replay moves or removes its data.
 
-| Minecraft / LeviLamina | Playback release                                                                    | Status     |
-| ---------------------- | ----------------------------------------------------------------------------------- | ---------- |
-| `26.10.*`              | [`v0.3.3-mc26.10`](https://github.com/wo55555/Playback/releases/tag/v0.3.3-mc26.10) | Prerelease |
-| `26.20.*`              | [`v0.3.3-mc26.20`](https://github.com/wo55555/Playback/releases/tag/v0.3.3-mc26.20) | Prerelease |
-| `26.40.*`              | [`v0.3.3-mc26.40`](https://github.com/wo55555/Playback/releases/tag/v0.3.3-mc26.40) | Prerelease |
-| `26.51.*`              | [`v0.3.3-mc26.50`](https://github.com/wo55555/Playback/releases/tag/v0.3.3-mc26.50) | Prerelease |
+### Lag correction
 
-All release lines target Minecraft Bedrock for Windows x64 and are distributed as client-only mods.
+Each tick of a recording carries its real time and the server tick stamped on network packets (`tick_info`).
+FlashBridge uses them to lay the Flashback replay out in **game time**: a server running at 10 TPS plays back at normal
+speed, catch-up bursts are interpolated, and laggy stretches get a marker. Real time and as-recorded modes are
+available too. This happens during conversion; the recording itself is unchanged.
 
-> [!NOTE]
-> `0.2.0` was deliberately skipped on MC 26.20. Video export did not work on that runtime: the 26.20 headers mis-declare a struct alignment, so the capture path read a render-item count from padding, classified every submission as overlay-only, and stalled every export on frame 0. The 26.20 line therefore goes from `v0.1.2-mc26.20` straight to `v0.2.1-mc26.20`, which carries the fix. The MC 26.10 line is unaffected and did publish `v0.2.0-mc26.10`.
+Recordings with `tick_info` cannot be read by upstream Playback. Turn on *Compatible format* (`recording.compatibleFormat`)
+if you need recordings upstream can open (lag correction is then unavailable).
 
-> [!TIP]
-> Playback is a client-only mod that can record sessions in both local worlds and multiplayer servers.
+### Also
 
-## Build From Source
+- **Markers** are stored in the recording and become Flashback markers.
+- **Crash recovery**: recordings left behind by a crash (`data\temp`) are detected and can be recovered from the panel
+  (up to the last 5 minutes are lost).
+- **Disk guard**: a warning below 3 GB free, and the recording is stopped and saved below 1 GB.
+- **Languages**: English, Japanese and Simplified Chinese (follows the game language; Japanese uses Yu Gothic / Meiryo).
 
-Playback builds on Windows x64 with Visual Studio 2022, xmake, and Git. See the [source-build guide](docs/building.md) for clean Release commands, output layout, and dependency troubleshooting.
+## Settings
 
-## Commands
+`mods\playback\data\settings.json`. Changes made in the panel are saved at once, and unknown keys are kept.
+FlashBridge's `setup-live` writes `liveStream`; a `live.json` from earlier builds is imported on first start.
 
-| Command            | Description                                  |
-| ------------------ | -------------------------------------------- |
-| `playback version` | Show the loaded Playback version.            |
-| `record start`     | Start or resume recording the current world. |
-| `record pause`     | Pause the active recording.                  |
-| `record stop`      | Stop recording and export the replay.        |
+```jsonc
+{
+  "language": "auto",                        // auto | ja_JP | en_US | zh_CN
+  "recording": { "compatibleFormat": false },
+  "output": { "mode": "both", "convert": "live", "sourceKeep": "days:7" },
+  "timeNormalization": { "mode": "game", "lagMarkers": true, "lagThresholdTps": 15, "maxGapSeconds": 10 },
+  "hotkeys": { "record": "F8", "recordWithMode": "Ctrl+F8", "pause": "Shift+F8", "marker": "F7",
+               "panel": "F6", "saveInstant": "F9", "toggleInstant": "Shift+F9" },
+  "hud": { "enabled": true, "corner": "topRight", "opacity": 0.9, "scale": 1.0, "hideIndicator": false,
+           "show": ["elapsed", "freeSpace", "tps", "converter", "markers"] },
+  "storage": { "warnFreeGB": 3, "stopFreeGB": 1 },
+  "instantReplay": { "enabled": false, "seconds": 120, "maxMegabytes": 2048, "chunkSeconds": 30 },
+  "autoRecord": { "enabled": true,
+                  "rules": [ { "name": "My server", "server": "*.example.net", "action": "record", "output": "both" } ] },
+  "liveStream": { "enabled": true, "host": "127.0.0.1", "port": 29525, "launchCommand": "...", "maxQueuedMegabytes": 256 }
+}
+```
 
-## Languages
+## Known limitations
 
-Playback currently includes English (`en_US`) and Simplified Chinese (`zh_CN`) translations stored in `src/lang/`.
+- There is no pause-menu button yet; the panel opens with `F6`.
+- The new features have not had broad testing in the game. Please report problems with `logs\latest.log`, the
+  FlashBridge log (`%USERPROFILE%\.flashbridge\logs\live.log`) and the versions you use.
+- Only the Bedrock 1.26.51 / LeviLamina 26.51 line is built. Replays recorded with other game versions are not
+  compatible, as upstream.
+- Upstream limitations apply to replaying and exporting: replays are a reconstruction of what the client saw, video
+  export is experimental and silent, Vibrant Visuals is not supported.
+- Items from server add-ons are not converted for Flashback (only the vanilla item table is known).
 
-## Frequently Asked Questions
+## What differs from upstream
 
-### What is Playback?
+- A recording is mirrored, without ever waiting for the network, to a local converter over loopback TCP (protocol 2;
+  the converter reports status and a verified result back). If it is missing or too slow, recording goes on and the
+  exported file is converted instead.
+- New action `tick_info` before every `next_tick`, and `markers` / `features` / `tickSource` in `metadata.json`.
+- Recorder buffer mode, `ReplayCompactor` (cuts instant replays out of the buffer), `settings.json`, hotkeys, HUD and
+  panel, library data, auto-record rules.
+- Built as C++23 (LeviLamina 26.51.7 headers use `std::to_underlying`); `--bundle_ffmpeg=n` skips building FFmpeg.
 
-Playback is a native Minecraft Bedrock replay recorder and camera editor for the Windows x64 LeviLamina client. It stores client-visible session data and reconstructs it in a separate local replay world.
+Protocol and build notes: [docs/live-stream.md](docs/live-stream.md). Design:
+[docs/design/recording-ux-and-time-normalization.md](docs/design/recording-ux-and-time-normalization.md).
 
-### Can Playback record multiplayer servers?
+## Build from source
 
-Yes. Playback is client-only and can record the chunks, entities, and selected packets visible to the client in local worlds or multiplayer sessions. The August 20, 2026 hotfix improves recording for servers that use alternate chunk transport or custom entity registries. Replays recorded before the fix cannot recover data that was never saved and may need to be recorded again.
+Windows x64 with Visual Studio 2022 Build Tools (C++); Git, xmake and LLVM are taken from `%USERPROFILE%\.toolchains`.
 
-### Can Playback export a replay to video?
+```
+powershell -ExecutionPolicy Bypass -File build-live.ps1
+```
 
-Experimental H.264 MP4 and PNG-sequence export is available in `v0.3.3`. It currently has known limitations and does not include audio.
+Output is in `bin\playback`. See [docs/building.md](docs/building.md) (upstream) for details and
+[tests/README.md](tests/README.md) for the compactor check.
 
-### Do camera keyframes interpolate across dimensions?
+## Credits and license
 
-No. Every recorded dimension change splits the camera timeline, including transitions through dimensions that contain no camera keyframes.
+Playback is by [wo555](https://github.com/wo55555) and contributors. This fork builds on it with thanks to them, to the
+[LeviLamina](https://github.com/LiteLDev/LeviLamina) project, and to [Flashback](https://github.com/Moulberry/Flashback),
+whose replay format FlashBridge writes.
 
-### Which Playback build should I install?
-
-Use `v0.3.3-mc26.10` for Minecraft/LeviLamina `26.10.*`, `v0.3.3-mc26.20` for `26.20.*`, `v0.3.3-mc26.40` for `26.40.*`, and `v0.3.3-mc26.50` for `26.51.*`. All four are prereleases. Do not mix release lines; see [Compatibility](#compatibility).
-
-## Development Status and Roadmap
-
-- The recording, replay, camera, and export workflows remain under active development and optimization.
-- Multiplayer server recording and replay will receive further debugging; testing and feedback are welcome.
-- Planned work includes audio export, broader renderer compatibility, and additional camera tooling.
-
-> [!TIP]
-> **Testing focus:** Please report reproducible camera, cross-dimension, chunk-loading, and export issues with the replay file, logs, GPU, renderer backend, and export settings.
-
-## Known Limitations
-
-- The replay format is still under development and may change during Alpha releases.
-- Playback reconstructs recorded client-visible state; it is not a deterministic copy of the original server simulation.
-- Pending scheduled ticks and server-owned systems such as villages, raids, and POI state are not currently persisted as authoritative simulation state.
-- Experimental video export currently produces silent H.264 MP4 or PNG sequences; audio export is not implemented and additional runtime issues may remain.
-- Vibrant Visuals is not supported yet. Recording, replay, and export are only validated with the standard renderer; turn Vibrant Visuals off before using Playback.
-- SSAA is limited to 4x on D3D12, lower when the supersampled render size does not fit, and to 1x on D3D11.
-- A camera can only render chunks present in the replay data; unrecorded terrain cannot be reconstructed.
-- The August 20, 2026 fix cannot retroactively restore server chunk or custom-entity registry data missing from an existing replay archive.
-- Compatibility must be checked again after updating Minecraft or LeviLamina.
-
-Please report reproducible problems with logs, versions, and a minimal replay where possible.
-
-[Open an issue](https://github.com/wo55555/Playback/issues) to report a reproducible problem.
-
-## Contributing
-
-See the [source-build guide](docs/building.md) and [CONTRIBUTING.md](CONTRIBUTING.md) for the build, formatting, and pull request workflow.
-
-Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project, you agree to abide by its terms.
-
-Report security issues privately by following [SECURITY.md](SECURITY.md). Do not open a public issue for a security vulnerability.
-
-## Code of Conduct
-
-Playback follows the Contributor Covenant Code of Conduct. Please read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before participating in issues, pull requests, discussions, or community spaces.
-
-## Acknowledgements
-
-Special thanks to the [LeviLamina](https://github.com/LiteLDev/LeviLamina) maintainers and community for providing the native modding platform and tooling that make Playback possible, and to the [Flashback](https://github.com/Moulberry/Flashback) project and its contributors for the replay concepts and architecture that inspired Playback.
-
-## License
-
-Copyright (C) 2026 [wo555](https://github.com/wo55555)
-
-Playback is released under the [GNU Affero General Public License v3.0](LICENSE). Distributed modifications must remain under AGPL-3.0 and provide their corresponding source code. Third-party components retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the `licenses/` directory.
+Copyright (C) 2026 [wo555](https://github.com/wo55555) and fork contributors. Released under the
+[GNU Affero General Public License v3.0](LICENSE); modifications must stay under AGPL-3.0 with their source. Third-party
+components keep their own licenses, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `licenses/`.
