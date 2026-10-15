@@ -26,6 +26,16 @@ enum class RecordCommand {
     ClosePanel,
     Recover,
     RestoreFromTrash,
+    SaveInstant,  // F9: cut the last minutes out of the instant replay buffer
+    StartBuffer,  // panel: start the instant replay buffer
+    StopBuffer,   // panel: stop it (and keep it off until the next world)
+};
+
+// Where the player is, for auto-record rules and for adding a rule from the panel.
+struct WorldInfo {
+    std::string world;
+    std::string server;
+    std::string dimension;
 };
 
 struct RecordRequest {
@@ -60,10 +70,21 @@ public:
     // Reads the hotkeys from the settings (called whenever they change).
     void applySettings(settings::Settings const& settings);
 
+    // The game tells which server (name as shown in the game) is being joined; world join / leave events follow.
+    void noteJoinInfo(std::string server);
+    void noteWorldJoined();
+    void noteWorldLeft();
+
+    // Where the player is, as of a moment ago (updated on the client thread; safe to call from the render thread).
+    [[nodiscard]] WorldInfo currentWorld() const;
+
 private:
     RecordControl() = default;
 
     void execute(RecordRequest const& request, ClientInstance& client);
+    [[nodiscard]] WorldInfo queryWorld() const; // client thread only
+    void evaluateAutoRecord(ClientInstance& client);
+    void keepBufferRunning(ClientInstance& client);
     void setPanelVisible(bool visible);
     void refreshPanelData();
     void guardDisk(bool recording);
@@ -77,6 +98,15 @@ private:
     std::atomic_bool mPanelVisible{};
     std::atomic_bool mInWorld{};
     int              mRegrabTicks{};
+
+    mutable std::mutex mWorldMutex;
+    std::string        mServerName; // from the join, empty for a local world
+    WorldInfo          mWorldCache;
+    int                mWorldCacheTicks{};
+    std::atomic_bool   mJoinPending{};
+    int                mJoinSettleTicks{};
+    bool               mBufferSuppressed{};
+    int                mBufferRestartDelay{};
     bool             mRecoveryAnnounced{};
     bool             mDiskWarned{};
 

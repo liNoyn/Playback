@@ -141,6 +141,7 @@ bool Playback::hook() {
                 record::ChunkMutationBarrier::setActiveLevel(event.player().getLevel().asClientLevel());
                 replay::ReplaySession::getInstance().onLevelJoined(event.player());
                 refreshMode(event.player().getLevel());
+                record::RecordControl::getInstance().noteWorldJoined();
             }
         )
     );
@@ -150,6 +151,7 @@ bool Playback::hook() {
             replaySession.onLevelExit();
             auto& recorder = record::Recorder::getInstance();
             if (recorder.isActive()) recorder.stop();
+            record::RecordControl::getInstance().noteWorldLeft();
             record::ChunkMutationBarrier::setActiveLevel(nullptr);
             impl->mLevelId.clear();
             impl->mMode.store(PlaybackMode::Unknown);

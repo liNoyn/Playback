@@ -1,10 +1,12 @@
 #include "EditorController.h"
 
 #include "playback/Playback.h"
+#include "playback/io/LibraryMeta.h"
 #include "playback/io/ReplayLibrary.h"
 #include "playback/keyframe/CameraTimelineEvaluator.h"
 #include "playback/keyframe/CameraTimelineRegistry.h"
 #include "playback/keyframe/ClientCameraCapture.h"
+#include "playback/record/Recorder.h"
 #include "playback/replay/ReplaySession.h"
 #include "playback/state/editing/CameraBindingOps.h"
 #include "playback/state/editing/ProjectStore.h"
@@ -34,6 +36,7 @@ ReplayBrowserEntry makeBrowserEntry(io::ReplaySummary summary) {
     entry.lastModified  = summary.lastModified;
     entry.canOpen       = summary.canOpen;
     entry.problem       = std::move(summary.problem);
+    entry.library       = io::LibraryMeta::getInstance().get(entry.replayId);
     return entry;
 }
 
@@ -403,7 +406,21 @@ void EditorController::publishState(bool hudVisible) {
     mContext.publish(std::move(state));
 }
 
+// Library data (favorites, tags, Flashback state) changes from several places, including FlashBridge reports that
+// arrive on another thread; the entries on screen follow without re-reading every replay file.
+void EditorController::syncLibraryMeta() {
+    auto const revision = io::LibraryMeta::getInstance().revision();
+    if (revision == mLibraryRevision) return;
+    mLibraryRevision = revision;
+    if (!mBrowserVisible || !mBrowserSnapshot) return;
+    auto snapshot      = std::make_shared<ReplayBrowserSnapshot>(*mBrowserSnapshot);
+    snapshot->revision = ++mBrowserRevision;
+    for (auto& entry : snapshot->replays) entry.library = io::LibraryMeta::getInstance().get(entry.replayId);
+    mBrowserSnapshot = std::move(snapshot);
+}
+
 void EditorController::refreshBrowser() {
+    mLibraryRevision   = io::LibraryMeta::getInstance().revision();
     auto snapshot      = std::make_shared<ReplayBrowserSnapshot>();
     snapshot->revision = ++mBrowserRevision;
     auto replays       = io::ReplayLibrary::loadReplays();
@@ -554,6 +571,26 @@ void EditorController::tick(bool hudVisible) {
         case EditorActionType::ClearReplayBrowserError:
             mBrowserError.clear();
             break;
+        case EditorActionType::SetReplayFavorite:
+            for (auto const& replayId : action.replayIds) io::LibraryMeta::getInstance().setFavorite(replayId, action.value);
+            break;
+        case EditorActionType::SetReplayDetails: {
+            auto const tags = action.details.find("tags");
+            auto const note = action.details.find("note");
+            io::LibraryMeta::getInstance().setDetails(
+                action.replayId,
+                io::LibraryMeta::parseTags(tags == action.details.end() ? std::string_view{} : std::string_view(tags->second)),
+                note == action.details.end() ? std::string{} : note->second
+            );
+            break;
+        }
+        case EditorActionType::ConvertReplayToFlashback:
+            for (auto const& replayId : action.replayIds) {
+                auto const* entry = findBrowserEntry(replayId);
+                if (!entry || !entry->canOpen) continue;
+                if (!record::convertReplayToFlashback(entry->path)) break;
+            }
+            break;
         case EditorActionType::SaveProject: {
             auto target = action.path.empty() ? mProjectFile : action.path;
             if (target.empty()) target = state::editing::ProjectStore::defaultProjectPath(mProject.projectPath);
@@ -584,6 +621,7 @@ void EditorController::tick(bool hudVisible) {
         }
     }
 
+    syncLibraryMeta();
     if (mExportDriver && !mExportTickedBeforeClientUpdate) mExportDriver->tick();
     mExportTickedBeforeClientUpdate = false;
     autosaveIfDue();

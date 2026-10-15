@@ -97,6 +97,16 @@ struct RecordingOptions {
 // Shared with the converter callbacks, which may report long after the recording ended.
 struct RecordingOutcome;
 
+// Instant replay: finished chunks of the buffer, in the recording session (epoch) that wrote them.
+struct BufferChunk {
+    std::string name;
+    int         ticks{};
+    bool        forcePlaySnapshot{};
+    int         startTick{}; // recorded ticks before this chunk
+};
+struct BufferEpoch;
+struct InstantExportJob;
+
 class Recorder {
 private:
     enum class State { Idle, Recording, Paused, Closing };
@@ -113,6 +123,16 @@ private:
     RecordingOptions                  mOptions;
     std::shared_ptr<RecordingOutcome> mOutcome;
     bool                              mWriteTickInfo = true;
+
+    // Instant replay (buffer mode): records continuously in short chunks; whole recording sessions (epochs) are
+    // dropped once newer ones cover the window, and a save cuts the last minutes out of what is left.
+    bool                                    mBufferMode = false;
+    bool                                    mInstantSavePending{};
+    int                                     mBufferChunkTicks  = 600;
+    int                                     mBufferWindowTicks = 2400;
+    uint64_t                                mBufferMaxBytes    = 2048ull << 20;
+    std::vector<BufferChunk>                mEpochChunks; // finished chunks of the epoch being written
+    std::vector<std::shared_ptr<BufferEpoch>> mFinishedEpochs;
 
     std::vector<std::shared_ptr<LevelChunkPacket>>            mSnapshotLevelChunks;
     std::vector<std::shared_ptr<SubChunkPacket>>              mSnapshotSubChunks;
@@ -188,7 +208,7 @@ private:
 
     void failRecording(std::string_view reason);
 
-    void cancelRecording(std::string_view reason);
+    void cancelRecording(std::string_view reason, bool quiet = false);
 
     void saveRecording();
 
@@ -199,6 +219,12 @@ private:
     void resetChunkSnapshot();
 
     void startOutput();
+
+    // Instant replay
+    [[nodiscard]] bool afterBufferChunk();
+    [[nodiscard]] bool rotateBufferEpoch();
+    void               queueInstantExport();
+    [[nodiscard]] int  chunkTickLimit() const { return mBufferMode ? mBufferChunkTicks : RECORD_CHUNK_TICKS; }
 
     void publishProgress();
 
@@ -219,6 +245,12 @@ public:
     void start(RecordingOptions options);
     void pause();
     void stop();
+
+    // Instant replay: record the last few minutes continuously instead of a recording; saveInstantReplay() turns
+    // them into a replay. A normal start() ends the buffer.
+    void               startBuffer();
+    void               saveInstantReplay();
+    [[nodiscard]] bool isBuffering() const { return mBufferMode && isActive(); }
 
     // Places a marker at the current tick; false when nothing is being recorded.
     bool addMarker(std::string name, int color);
@@ -261,6 +293,10 @@ public:
         std::string_view             name
     );
 };
+
+// Asks FlashBridge to convert a replay that is already in the library (it stays in place); false, with a
+// notification, when FlashBridge is not set up.
+bool convertReplayToFlashback(std::filesystem::path const& replayFile);
 
 [[nodiscard]] bool hookNetwork(bool);
 

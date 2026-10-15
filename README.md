@@ -5,7 +5,7 @@
 > **Live-stream fork.** This is [wo55555/Playback](https://github.com/wo55555/Playback) plus recording extensions:
 > the recording is mirrored to a local converter ([FlashBridge](https://github.com/liNoyn/FlashBridge)) that turns it
 > into a Java Edition [Flashback](https://github.com/Moulberry/Flashback) replay, finished the moment you stop;
-> hotkeys (F8 record / Shift+F8 pause / F7 marker / F6 panel), an on-screen recording indicator, a control panel,
+> hotkeys (F8 record / Shift+F8 pause / F7 marker / F6 panel / F9 save the last minutes), an on-screen recording indicator, a control panel, an instant replay buffer, auto-record rules, a library with favorites, tags, notes and Flashback conversion,
 > output modes (Playback only / both / Flashback only), lag-corrected replays (`tick_info`), markers, crash recovery
 > and a low-disk guard, all configured in `mods/playback/data/settings.json`. Replaying and editing are unchanged.
 > Install with `install-live.ps1` from the Releases page; protocol and build notes are in

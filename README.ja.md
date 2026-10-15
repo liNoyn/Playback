@@ -36,6 +36,7 @@
 | 一時停止 / 再開 | `Shift+F8` | `/record pause` |
 | マーカー（しおり） | `F7` | `/record marker [名前]` |
 | 操作パネル | `F6` | `/record panel` |
+| 直近を保存（インスタントリプレイ） | `F9` | |
 | 状態の表示 | | `/record status` |
 
 キーはチャット入力中・メニュー表示中は反応しません。すべて `settings.json` で変更できます。
@@ -48,6 +49,41 @@
 - 録画：開始・停止・一時停止・マーカー、この録画の出力と変換タイミングの選択、状態（経過時間・TPS・FlashBridge・空き容量）
 - 設定：既定の出力、元の録画の扱い、時間の補正、画面表示、空き容量の警告・停止、言語
 - 状態：FlashBridge の状態と直近の結果（出力先を開く）、未保存の録画の復元、ゴミ箱、診断情報のコピー
+
+## インスタントリプレイ（直近 N 分を保存）
+
+設定（パネル F6 →「設定」→ インスタントリプレイ）でオンにすると、ワールドに入っている間、直近 N 分（既定 2 分）を
+常に録画し続けます（画面には `● BUFFER` と出ます）。**`F9` を押した瞬間に、その直近 N 分がリプレイとして保存**されます
+（`…-instant.zip`、タグ `instant`）。出力モードは通常の録画と同じで、「両方」なら FlashBridge で Flashback 用にも変換されます。
+
+- 録画は 30 秒ごとのチャンクに区切って行い、古い分は捨てます。区切りごとに世界の完全なスナップショットを取るため、
+  通常の録画（5 分ごと）よりわずかな負荷が定期的にかかります。気になる場合は `instantReplay.chunkSeconds` を延ばしてください。
+- ディスク使用量は `instantReplay.maxMegabytes`（既定 2048MB）までです。
+- バッファはゲーム終了・ワールド退出で破棄されます（保存するのは `F9` を押したときだけ）。
+- 通常の録画を始める（`F8`）と、バッファはそこで終わり、録画が引き継ぎます。録画を止めるとバッファは自動で再開します。
+- パネルの「停止」でバッファを止めると、次にワールドに入るまで再開しません。
+
+## 自動録画
+
+パネルの設定 →「自動録画」で、**ワールド名・サーバー名・ディメンション**に一致したルールにしたがって、ワールドに入ると
+自動で録画を始められます（入ってから約 3 秒後に判定）。ルールは上から順に見て、最初に一致したものが適用されます。
+
+| 動作 | 内容 |
+|---|---|
+| 録画 | 自動で録画を開始（出力モードはルールごとに指定、省略時は既定） |
+| 確認 | 「ルール○○に一致しました。F8 で録画を開始できます」と通知するだけ |
+| 録画しない | このワールドでは自動録画もインスタントリプレイも動かさない |
+
+名前には `*`（任意の文字列）と `?`（1 文字）が使えます（例: `*.example.net`）。パネルの「現在のワールド／サーバーのルールを
+追加」ボタンで、今いる場所のルールを作れます。ワールドを出ると、録画は自動で止まります（従来どおり）。
+
+## ライブラリ（リプレイ一覧）
+
+- **お気に入り**（カードの左上の星、またはボタン）、**タグ**（カンマ区切り）、**メモ**。検索はタグとメモも対象です。
+  データは `mods\playback\data\library.json` に保存されます（リプレイファイルは変更しません）。
+- **Flashback 変換済み**のバッジ（右下）と、「Flashback」ボタンでの**後からの変換**（複数選択可。元のリプレイはそのまま）。
+  絞り込みに「お気に入りのみ」「Flashback 変換済み」「未変換」を追加しました。
+- 名前の変更・削除に合わせて、上記のデータも付け替え・削除されます。
 
 ## 出力モード
 
@@ -74,6 +110,7 @@ FlashBridge が設定されていない場合は「Playback のみ」で録画�
 - **クラッシュ復旧**：保存前にゲームが落ちた録画（`data\temp`）を見つけると通知し、パネルの「状態」から復元できます。
   直近のチャンク（最大 5 分）は失われます。
 - **空き容量の保護**：録画中、保存先の空きが 3GB を切ると警告、1GB を切ると録画を止めて保存します。
+- **未実装**：ポーズメニューのボタン（ゲームの画面定義が手元になく、確認できていません）。
 - **日本語表示**：ゲームの言語が日本語なら日本語で表示し、游ゴシック（なければメイリオ）を使います。
 - **マーカー**：Playback のメタデータに保存され、FlashBridge が Flashback のマーカーに変換します。
 
@@ -89,10 +126,13 @@ FlashBridge の `setup-live` が `liveStream`（変換ツールの起動コマ�
   "recording": { "compatibleFormat": false },
   "output": { "mode": "both", "convert": "live", "sourceKeep": "days:7" },
   "timeNormalization": { "mode": "game", "lagMarkers": true, "lagThresholdTps": 15, "maxGapSeconds": 10 },
-  "hotkeys": { "record": "F8", "recordWithMode": "Ctrl+F8", "pause": "Shift+F8", "marker": "F7", "panel": "F6" },
+  "hotkeys": { "record": "F8", "recordWithMode": "Ctrl+F8", "pause": "Shift+F8", "marker": "F7", "panel": "F6", "saveInstant": "F9" },
   "hud": { "enabled": true, "corner": "topRight", "opacity": 0.9, "scale": 1.0, "hideIndicator": false,
            "show": ["elapsed", "freeSpace", "tps", "converter", "markers"] },
   "storage": { "warnFreeGB": 3, "stopFreeGB": 1 },
+  "instantReplay": { "enabled": false, "minutes": 2, "maxMegabytes": 2048, "chunkSeconds": 30 },
+  "autoRecord": { "enabled": true,
+                  "rules": [ { "name": "友達のサーバー", "server": "*.example.net", "action": "record", "output": "both" } ] },
   "liveStream": { "enabled": true, "host": "127.0.0.1", "port": 29525, "launchCommand": "...", "maxQueuedMegabytes": 256 }
 }
 ```

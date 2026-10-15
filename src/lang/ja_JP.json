@@ -20,13 +20,15 @@
             "markerName": "マーカー {}",
             "hud": {
                 "rec": "REC",
-                "free": "空き {} GB"
+                "free": "空き {} GB",
+                "buffer": "BUFFER"
             },
             "state": {
                 "idle": "待機中",
                 "recording": "録画中",
                 "paused": "一時停止",
-                "saving": "保存中…"
+                "saving": "保存中…",
+                "buffering": "インスタントリプレイ"
             },
             "converter": {
                 "afterStop": "停止後に FlashBridge で変換",
@@ -66,7 +68,13 @@
                 "flashBridgeMissing": "未設定（FlashBridge をインストールしてください）",
                 "flashBridgeReady": "準備完了",
                 "freeSpace": "空き容量",
-                "closeHint": "{} または Esc で閉じる"
+                "closeHint": "{} または Esc で閉じる",
+                "instantReplay": "インスタントリプレイ",
+                "bufferingNote": "直近 {} 分を保持中",
+                "saveInstant": "直近 {} 分を保存",
+                "stopBuffer": "停止",
+                "startBuffer": "インスタントリプレイを開始",
+                "startReplacesBuffer": "録画を始めると、インスタントリプレイのバッファは終了します。"
             },
             "settings": {
                 "recording": "録画",
@@ -101,14 +109,23 @@
                 "showConverter": "FlashBridge",
                 "showMarkers": "マーカー",
                 "hotkeys": "ホットキー",
-                "hotkeyList": "開始/停止 {}   一時停止 {}   マーカー {}   パネル {}（{}）\nsettings.json で変更できます。",
+                "hotkeyList": "開始/停止 {}   一時停止 {}   マーカー {}   パネル {}（{}）   直近を保存 {}\nsettings.json で変更できます。",
                 "storage": "保存と容量",
                 "warnFree": "警告する空き容量",
                 "stopFree": "停止する空き容量",
                 "language": "言語",
                 "languageAuto": "ゲームに合わせる",
                 "languageNote": "ゲームの再起動後に反映されます。",
-                "openFile": "settings.json を表示"
+                "openFile": "settings.json を表示",
+                "instantReplay": "インスタントリプレイ",
+                "instantEnabled": "プレイ中、直近の数分間を常に保持する",
+                "instantHelp": "短い区切りで常に録画し、古い分を捨てます（区切りごとにごく短い負荷があります）。ホットキーで保存します。",
+                "instantMinutes": "保持する長さ",
+                "minutesFormat": "%d 分",
+                "instantMegabytes": "ディスクの上限",
+                "autoRecord": "自動録画",
+                "autoEnabled": "ワールドに入ったときにルールを適用する",
+                "autoHelp": "ワールド名・サーバー名に最初に一致したルールが適用されます（* と ? が使えます）。"
             },
             "status": {
                 "setup": "セットアップ",
@@ -145,7 +162,29 @@
                 "restored": "{} を元に戻しました",
                 "diskLow": "空き容量が少なくなっています：残り {:.1f} GB",
                 "diskStopped": "空き容量がほぼありません。録画を停止して保存しました。",
-                "copied": "クリップボードにコピーしました"
+                "copied": "クリップボードにコピーしました",
+                "notBuffering": "インスタントリプレイが動いていません。パネル（F6）で有効にしてください。",
+                "instantSaving": "インスタントリプレイを保存しています…",
+                "instantEmpty": "まだ保持されている内容がありません。",
+                "instantSaved": "{}（{}）を保存しました",
+                "instantFailed": "インスタントリプレイを保存できませんでした：{}",
+                "noFlashBridgeConvert": "FlashBridge が設定されていないため変換できません。",
+                "convertStarted": "{} を Flashback 用に変換しています…",
+                "autoStarted": "ルール「{}」で録画を開始しました",
+                "autoAsk": "ルール「{}」に一致しました。{} で録画を開始できます。"
+            },
+            "auto": {
+                "record": "録画",
+                "ask": "確認",
+                "ignore": "録画しない",
+                "unnamed": "（名前なし）",
+                "worldIs": "ワールド：{}",
+                "serverIs": "サーバー：{}",
+                "dimensionIs": "ディメンション：{}",
+                "everywhere": "すべてのワールド",
+                "defaultOutput": "既定の出力",
+                "addWorld": "ワールド「{}」のルールを追加",
+                "addServer": "サーバー「{}」のルールを追加"
             }
         },
         "replayBrowser": {
@@ -182,7 +221,10 @@
             "filter": {
                 "all": "すべて",
                 "playable": "再生可能なもののみ",
-                "broken": "再生できないもののみ"
+                "broken": "再生できないもののみ",
+                "favorites": "お気に入りのみ",
+                "converted": "Flashback 変換済み",
+                "notConverted": "未変換"
             },
             "sort": {
                 "name": "名前",
@@ -202,7 +244,9 @@
                 "fileSize": "ファイルサイズ",
                 "fileFormat": "ファイル形式",
                 "fileName": "ファイル名",
-                "filePath": "ファイルの場所"
+                "filePath": "ファイルの場所",
+                "tags": "タグ",
+                "note": "メモ"
             },
             "action": {
                 "openReplay": "リプレイを開く",
@@ -210,7 +254,10 @@
                 "showInFolder": "フォルダーで表示",
                 "delete": "削除",
                 "open": "開く",
-                "edit": "編集"
+                "edit": "編集",
+                "favorite": "お気に入り",
+                "unfavorite": "お気に入り解除",
+                "convert": "Flashback"
             },
             "dialog": {
                 "cancel": "キャンセル",
@@ -244,6 +291,13 @@
                 "renameMissingMetadata": "metadata.json がないため名前を変更できません",
                 "parseMetadata": "リプレイのメタデータを読み取れません：{}",
                 "renameFile": "リプレイファイルの名前を変更できません：{}"
+            },
+            "tagsHint": "カンマで区切る",
+            "flashback": {
+                "converting": "Flashback 変換中",
+                "converted": "Flashback 済み",
+                "unverified": "Flashback（未検証）",
+                "failed": "Flashback 失敗"
             }
         },
         "refactorEditor": {

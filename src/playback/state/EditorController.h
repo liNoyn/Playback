@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "playback/exporting/ExportCoordinator.h"
 #include "playback/exporting/ReplayExportDriver.h"
@@ -40,6 +40,7 @@ private:
     [[nodiscard]] bool isProjectDirty() const { return mCommandStack.revision() != mSavedRevision; }
     [[nodiscard]] std::optional<state::editing::model::CameraKeyframe> captureCameraKeyframe() const;
     void                                                               refreshBrowser();
+    void                                                               syncLibraryMeta();
     void runBrowserOperation(ReplayBrowserOperation operation, bool hudVisible, auto&& callback) {
         mBrowserOperation = operation;
         publishState(hudVisible);
@@ -60,6 +61,7 @@ private:
     exporting::ExportCoordinator                   mExportCoordinator;
     std::unique_ptr<exporting::ReplayExportDriver> mExportDriver;
     std::string                                    mActiveReplayPath;
+    std::uint64_t                                  mLibraryRevision{};
     std::optional<std::string>                     mPreviewCameraId;
     int                                            mProjectTotalTicks{-1};
     bool                                           mExportTickedBeforeClientUpdate{};

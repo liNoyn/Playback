@@ -6,6 +6,8 @@
 
 #include "imgui.h"
 
+#include <array>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -16,7 +18,7 @@
 
 namespace playback::screen::select_replay {
 
-enum class ReplayFilter { All, Playable, Broken };
+enum class ReplayFilter { All, Playable, Broken, Favorites, Converted, NotConverted };
 enum class BrowserSort { LastModified, ReplayName, WorldName, Duration, FileSize };
 
 class SelectReplayScreen {
@@ -42,6 +44,9 @@ private:
     void drawDeleteDialog();
     void drawRenameDialog();
     void openRenameDialog();
+    void drawLibraryEditor(playback::state::ReplayBrowserEntry const& replay, float width);
+    void toggleFavorite(std::vector<std::string> replayIds, bool favorite);
+    void convertToFlashback(std::vector<std::string> replayIds);
     void select(std::string_view replayId, std::size_t visibleIndex, bool toggle, bool range);
     void openSelected();
     void importReplay();
@@ -61,6 +66,11 @@ private:
     ReplayFilter                               mFilter     = ReplayFilter::All;
     ViewMode                                   mViewMode   = ViewMode::Grid;
     bool                                       mShowDeleteDialog{};
+    // Tags and note of the selected replay while they are being edited (saved when the field loses focus)
+    std::string                                mMetaEditId;
+    std::uint64_t                              mMetaRevision{};
+    std::array<char, 256>                      mTagsBuffer{};
+    std::array<char, 1024>                     mNoteBuffer{};
     bool                                       mRenameDialogOpen{};
     std::string                                mRenameBuffer;
     playback::editor::ui::Animator             mAnimator;

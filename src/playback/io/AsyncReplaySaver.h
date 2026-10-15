@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "mc/deps/core/utility/BinaryStream.h"
 
@@ -225,6 +225,17 @@ public:
     void writeChunkCacheFile(PlaybackBuffer const& chunkCacheOutput, int index);
 
     bool writeReplayChunk(std::string chunkName, std::string metadata);
+
+    // Fork extension (instant replay): once everything queued before it is written, copies the named finished chunk
+    // files and the chunk cache, including the part not on disk yet, into `stagingDir` (chunk files directly, the
+    // cache as level_chunk_caches/N.bin). `done` runs on the worker thread with the result.
+    bool stageSnapshot(
+        std::filesystem::path                stagingDir,
+        std::vector<std::string>             chunkNames,
+        std::function<void(bool, std::string const&)> done
+    );
+
+    [[nodiscard]] std::filesystem::path recordPath() const { return mRecordPath; }
 };
 
 } // namespace playback::io

@@ -20,13 +20,15 @@
             "markerName": "标记 {}",
             "hud": {
                 "rec": "REC",
-                "free": "剩余 {} GB"
+                "free": "剩余 {} GB",
+                "buffer": "缓冲"
             },
             "state": {
                 "idle": "未录制",
                 "recording": "录制中",
                 "paused": "已暂停",
-                "saving": "正在保存..."
+                "saving": "正在保存...",
+                "buffering": "即时回放"
             },
             "converter": {
                 "afterStop": "停止后由 FlashBridge 转换",
@@ -66,7 +68,13 @@
                 "flashBridgeMissing": "未设置（请安装 FlashBridge）",
                 "flashBridgeReady": "就绪",
                 "freeSpace": "剩余空间",
-                "closeHint": "按 {} 或 Esc 关闭"
+                "closeHint": "按 {} 或 Esc 关闭",
+                "instantReplay": "即时回放",
+                "bufferingNote": "正在保留最近 {} 分钟",
+                "saveInstant": "保存最近 {} 分钟",
+                "stopBuffer": "停止缓冲",
+                "startBuffer": "开始即时回放",
+                "startReplacesBuffer": "开始录制会结束即时回放缓冲。"
             },
             "settings": {
                 "recording": "录制",
@@ -101,14 +109,23 @@
                 "showConverter": "FlashBridge",
                 "showMarkers": "标记",
                 "hotkeys": "快捷键",
-                "hotkeyList": "开始/停止 {}   暂停 {}   标记 {}   面板 {} ({})\n可在 settings.json 中修改。",
+                "hotkeyList": "开始/停止 {}   暂停 {}   标记 {}   面板 {} ({})   保存即时回放 {}\n可在 settings.json 中修改。",
                 "storage": "存储",
                 "warnFree": "低于此值警告",
                 "stopFree": "低于此值停止",
                 "language": "语言",
                 "languageAuto": "跟随游戏",
                 "languageNote": "重启游戏后生效。",
-                "openFile": "显示 settings.json"
+                "openFile": "显示 settings.json",
+                "instantReplay": "即时回放",
+                "instantEnabled": "游玩时持续保留最近几分钟",
+                "instantHelp": "以短片段持续录制（每个片段会有轻微卡顿）并丢弃旧片段，按快捷键保存。",
+                "instantMinutes": "长度",
+                "minutesFormat": "%d 分钟",
+                "instantMegabytes": "磁盘上限",
+                "autoRecord": "自动录制",
+                "autoEnabled": "进入世界时应用规则",
+                "autoHelp": "匹配该世界或服务器的第一条规则生效，名称中可使用 * 和 ?。"
             },
             "status": {
                 "setup": "设置",
@@ -145,7 +162,29 @@
                 "restored": "已还原 {}",
                 "diskLow": "磁盘空间不足：剩余 {:.1f} GB",
                 "diskStopped": "磁盘即将用尽：已停止并保存录制。",
-                "copied": "已复制到剪贴板"
+                "copied": "已复制到剪贴板",
+                "notBuffering": "即时回放未运行，请在面板（F6）中开启。",
+                "instantSaving": "正在保存即时回放…",
+                "instantEmpty": "还没有缓冲任何内容。",
+                "instantSaved": "已保存 {}（{}）",
+                "instantFailed": "无法保存即时回放：{}",
+                "noFlashBridgeConvert": "未设置 FlashBridge，无法转换。",
+                "convertStarted": "正在为 Flashback 转换 {}…",
+                "autoStarted": "已按规则“{}”开始录制",
+                "autoAsk": "规则“{}”已匹配，按 {} 开始录制。"
+            },
+            "auto": {
+                "record": "录制",
+                "ask": "询问",
+                "ignore": "不录制",
+                "unnamed": "（未命名）",
+                "worldIs": "世界：{}",
+                "serverIs": "服务器：{}",
+                "dimensionIs": "维度：{}",
+                "everywhere": "任何地方",
+                "defaultOutput": "默认输出",
+                "addWorld": "为世界“{}”添加规则",
+                "addServer": "为服务器“{}”添加规则"
             }
         },
         "replayBrowser": {
@@ -182,7 +221,10 @@
             "filter": {
                 "all": "全部",
                 "playable": "仅可播放",
-                "broken": "仅不可用"
+                "broken": "仅不可用",
+                "favorites": "仅收藏",
+                "converted": "已转换为 Flashback",
+                "notConverted": "尚未转换"
             },
             "sort": {
                 "name": "名称",
@@ -202,7 +244,9 @@
                 "fileSize": "文件大小",
                 "fileFormat": "文件格式",
                 "fileName": "文件名",
-                "filePath": "文件路径"
+                "filePath": "文件路径",
+                "tags": "标签",
+                "note": "备注"
             },
             "action": {
                 "openReplay": "打开回放",
@@ -210,7 +254,10 @@
                 "showInFolder": "在文件夹中显示",
                 "delete": "删除",
                 "open": "打开",
-                "edit": "编辑"
+                "edit": "编辑",
+                "favorite": "收藏",
+                "unfavorite": "取消收藏",
+                "convert": "转 Flashback"
             },
             "dialog": {
                 "cancel": "取消",
@@ -244,6 +291,13 @@
                 "renameMissingMetadata": "回放归档中缺少 metadata.json，无法重命名",
                 "parseMetadata": "无法解析回放元数据：{}",
                 "renameFile": "重命名文件失败：{}"
+            },
+            "tagsHint": "用逗号分隔",
+            "flashback": {
+                "converting": "Flashback 转换中",
+                "converted": "Flashback",
+                "unverified": "Flashback（未验证）",
+                "failed": "Flashback 失败"
             }
         },
         "refactorEditor": {

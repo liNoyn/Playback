@@ -10,7 +10,7 @@
 
 namespace playback::record {
 
-enum class RecordingPhase { Idle, Recording, Paused, Saving };
+enum class RecordingPhase { Idle, Recording, Paused, Saving, Buffering };
 enum class ToastKind { Info, Success, Warning, Error };
 
 // Final result of a conversion, as FlashBridge reported it (STATUS lastResult, protocol 2).

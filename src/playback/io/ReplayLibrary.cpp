@@ -1,6 +1,7 @@
-﻿#include "ReplayLibrary.h"
+#include "ReplayLibrary.h"
 
 #include "playback/Playback.h"
+#include "playback/io/LibraryMeta.h"
 #include "playback/record/Recorder.h"
 #include "playback/utils/PathUtils.h"
 
@@ -434,6 +435,7 @@ bool ReplayLibrary::deleteReplay(ReplaySummary const& replay, std::string& error
         error = ec ? ec.message() : "playback.replayBrowser.error.fileNotFound"_tr();
         return false;
     }
+    LibraryMeta::getInstance().remove(replay.path.filename().string());
     return true;
 }
 
@@ -504,6 +506,7 @@ bool ReplayLibrary::renameReplay(ReplaySummary const& replay, std::string_view n
             error = "playback.replayBrowser.error.renameFile"_tr(ec.message());
             return false;
         }
+        LibraryMeta::getInstance().rename(replay.path.filename().string(), newPath.filename().string());
     }
 
     return true;

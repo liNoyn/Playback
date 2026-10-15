@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace playback::settings {
 
@@ -16,6 +17,24 @@ enum class OutputMode { Playback, Both, Flashback };
 // When the Flashback replay is made: streamed while recording, or from the exported file after it stops.
 enum class ConvertTiming { Live, AfterStop };
 enum class HudCorner { TopLeft, TopRight, BottomLeft, BottomRight };
+// What an auto-record rule does when the world you joined matches it.
+enum class AutoRecordAction { Record, Ask, Ignore };
+
+// Case-insensitive match with `*` (any text) and `?` (one character); an empty pattern matches anything.
+[[nodiscard]] bool globMatch(std::string_view pattern, std::string_view text);
+
+[[nodiscard]] std::string_view                toString(AutoRecordAction action);
+[[nodiscard]] std::optional<AutoRecordAction> parseAutoRecordAction(std::string_view text);
+
+// Joining a world whose name / server / dimension match all non-empty fields applies the first matching rule.
+struct AutoRecordRule {
+    std::string                name;
+    std::string                world;     // level name
+    std::string                server;    // server name as the game shows it
+    std::string                dimension; // dimension name, e.g. Overworld
+    AutoRecordAction           action = AutoRecordAction::Record;
+    std::optional<OutputMode>  output;    // none: the default output
+};
 
 [[nodiscard]] std::string_view           toString(OutputMode mode);
 [[nodiscard]] std::optional<OutputMode>  parseOutputMode(std::string_view text);
@@ -72,6 +91,7 @@ struct Settings {
         std::string pause          = "Shift+F8";
         std::string marker         = "F7";
         std::string panel          = "F6";
+        std::string saveInstant    = "F9";
     } hotkeys;
 
     struct Hud {
@@ -91,6 +111,19 @@ struct Settings {
         double warnFreeGB = 3;
         double stopFreeGB = 1;
     } storage;
+
+    // Records the last few minutes all the time; the hotkey saves them as a replay.
+    struct InstantReplay {
+        bool enabled         = false;
+        int  minutes         = 2;
+        int  maxMegabytes    = 2048;
+        int  chunkSeconds    = 30;
+    } instantReplay;
+
+    struct AutoRecord {
+        bool                        enabled = true;
+        std::vector<AutoRecordRule> rules;
+    } autoRecord;
 
     io::LiveStreamConfig liveStream;
 

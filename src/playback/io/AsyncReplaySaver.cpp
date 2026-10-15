@@ -1,4 +1,4 @@
-﻿#include "AsyncReplaySaver.h"
+#include "AsyncReplaySaver.h"
 
 #include "playback/action/Action.h"
 #include "playback/io/cache/CachedChunkPacket.h"
@@ -378,6 +378,48 @@ void AsyncReplaySaver::writeChunkCacheFile(PlaybackBuffer const& chunkCacheOutpu
     }
 
     ++mWrittenChunkCacheFiles;
+}
+
+bool AsyncReplaySaver::stageSnapshot(
+    std::filesystem::path                         stagingDir,
+    std::vector<std::string>                      chunkNames,
+    std::function<void(bool, std::string const&)> done
+) {
+    return submit([this, stagingDir = std::move(stagingDir), chunkNames = std::move(chunkNames), done = std::move(done)](ReplayWriter&) {
+        std::error_code ec;
+        std::string     error;
+        try {
+            auto const cacheDir = stagingDir / "level_chunk_caches";
+            std::filesystem::create_directories(cacheDir, ec);
+            if (ec) throw std::runtime_error("cannot create " + cacheDir.string() + ": " + ec.message());
+
+            for (auto const& name : chunkNames) {
+                std::filesystem::copy_file(mRecordPath / name, stagingDir / name, std::filesystem::copy_options::overwrite_existing, ec);
+                if (ec) throw std::runtime_error("cannot copy " + name + ": " + ec.message());
+            }
+
+            auto const written = mRecordPath / "level_chunk_caches";
+            if (std::filesystem::is_directory(written, ec)) {
+                for (auto const& entry : std::filesystem::directory_iterator(written, ec)) {
+                    if (!entry.is_regular_file(ec)) continue;
+                    std::filesystem::copy_file(entry.path(), cacheDir / entry.path().filename(), std::filesystem::copy_options::overwrite_existing, ec);
+                    if (ec) throw std::runtime_error("cannot copy " + entry.path().filename().string() + ": " + ec.message());
+                }
+            }
+            // The newest cache file is still being filled; it is written out (and later overwritten) at 10000 entries.
+            if (mCurrentChunkCacheIndex >= 0 && mChunkCacheOutput.getWritePointer() > 0) {
+                std::string compressed;
+                snappy::Compress(mChunkCacheOutput.mBuffer.data(), mChunkCacheOutput.mBuffer.size(), &compressed);
+                std::ofstream file(cacheDir / (std::to_string(mCurrentChunkCacheIndex) + ".bin"), std::ios::binary | std::ios::trunc);
+                file.write(compressed.data(), static_cast<std::streamsize>(compressed.size()));
+                file.flush();
+                if (!file) throw std::runtime_error("cannot write the current chunk cache");
+            }
+        } catch (std::exception const& exception) {
+            error = exception.what();
+        }
+        if (done) done(error.empty(), error);
+    });
 }
 
 bool AsyncReplaySaver::writeReplayChunk(std::string chunkName, std::string metadata) {

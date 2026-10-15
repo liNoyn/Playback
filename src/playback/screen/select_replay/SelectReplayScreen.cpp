@@ -4,6 +4,7 @@
 #include "playback/editor/ui/EditorTheme.h"
 #include "playback/editor/ui/components/MessageDialog.h"
 #include "playback/editor/ui/iconfont.h"
+#include "playback/io/LibraryMeta.h"
 #include "playback/utils/PathUtils.h"
 
 #include "ll/api/i18n/I18n.h"
@@ -42,6 +43,8 @@ constexpr float kPanelWidthScale    = 0.86f;
 constexpr float kPanelHeightScale   = 0.90f;
 constexpr float kPanelMinimumMargin = 24.0f;
 constexpr float kTextOpticalOffsetY = -2.0f;
+constexpr ImU32 kColorStar         = IM_COL32(255, 200, 60, 255);
+constexpr ImU32 kColorFlashback    = IM_COL32(70, 195, 123, 255);
 
 struct NavigationLayoutConfig {
     float titleFontSize       = 28.0f;
@@ -94,7 +97,7 @@ struct CardLayoutConfig {
 constexpr CardLayoutConfig kCardLayout{};
 
 struct DetailsLayoutConfig {
-    static constexpr int metadataRowCount = 7;
+    static constexpr int metadataRowCount = 12;
 
     float panelGap                    = 16.0f;
     float stackedBreakpoint           = 1080.0f;
@@ -172,6 +175,79 @@ ImU32 selectionFill(ImU32 idle, ImU32 hover, float hoverAmount, float selectedAm
     ImU32 const neutral  = lerpColor(idle, hover, hoverAmount);
     ImU32 const selected = lerpColor(idle, kColorAccent, 0.30f + 0.06f * hoverAmount);
     return lerpColor(neutral, selected, selectedAmount);
+}
+
+// A five-pointed star as a fan of triangles (the shape is not convex).
+void drawStar(ImDrawList* draw, ImVec2 center, float radius, ImU32 fill, ImU32 outline) {
+    constexpr int   Points = 10;
+    constexpr float Pi     = 3.14159265f;
+    ImVec2          vertices[Points];
+    for (int i = 0; i < Points; ++i) {
+        float const angle  = -Pi / 2 + i * Pi / 5;
+        float const length = (i % 2 == 0) ? radius : radius * 0.42f;
+        vertices[i]        = {center.x + std::cos(angle) * length, center.y + std::sin(angle) * length};
+    }
+    if (fill != 0) {
+        for (int i = 0; i < Points; ++i) draw->AddTriangleFilled(center, vertices[i], vertices[(i + 1) % Points], fill);
+    }
+    draw->AddPolyline(vertices, Points, outline, ImDrawFlags_Closed, 1.5f);
+}
+
+std::string flashbackBadgeText(playback::io::FlashbackState state) {
+    using playback::io::FlashbackState;
+    switch (state) {
+    case FlashbackState::Converting:
+        return "playback.replayBrowser.flashback.converting"_tr();
+    case FlashbackState::Converted:
+        return "playback.replayBrowser.flashback.converted"_tr();
+    case FlashbackState::Unverified:
+        return "playback.replayBrowser.flashback.unverified"_tr();
+    case FlashbackState::Failed:
+        return "playback.replayBrowser.flashback.failed"_tr();
+    case FlashbackState::None:
+        break;
+    }
+    return {};
+}
+
+ImU32 flashbackBadgeColor(playback::io::FlashbackState state) {
+    using playback::io::FlashbackState;
+    switch (state) {
+    case FlashbackState::Converted:
+        return kColorFlashback;
+    case FlashbackState::Failed:
+        return kColorDanger;
+    case FlashbackState::Unverified:
+        return IM_COL32(242, 163, 60, 255);
+    default:
+        return IM_COL32(76, 141, 255, 255);
+    }
+}
+
+// Favorite star (top left) and Flashback state (bottom right) over a thumbnail.
+void drawPreviewBadges(ImDrawList* draw, ImVec2 start, ImVec2 size, playback::state::ReplayBrowserEntry const& replay) {
+    if (replay.library.favorite) {
+        float const radius = std::clamp(size.x * 0.045f, 7.0f, 12.0f);
+        draw->AddCircleFilled({start.x + radius + 8.0f, start.y + radius + 8.0f}, radius + 5.0f, IM_COL32(0, 0, 0, 150));
+        drawStar(draw, {start.x + radius + 8.0f, start.y + radius + 8.0f}, radius, kColorStar, kColorStar);
+    }
+    auto const badge = flashbackBadgeText(replay.library.flashback);
+    if (badge.empty()) return;
+    // Sized explicitly: this runs inside windows with different font scales.
+    float const scale    = std::clamp(size.x / 260.0f, 0.7f, 1.0f);
+    float const fontSize = kCardLayout.metadataFontSize * scale;
+    auto const  textSize = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, badge.c_str());
+    ImVec2 const min{start.x + size.x - textSize.x - 22.0f * scale, start.y + size.y - textSize.y - 14.0f * scale};
+    ImVec2 const max{start.x + size.x - 6.0f, start.y + size.y - 6.0f};
+    draw->AddRectFilled(min, max, IM_COL32(12, 14, 18, 215), 6.0f);
+    draw->AddRect(min, max, flashbackBadgeColor(replay.library.flashback), 6.0f, 0, 1.2f);
+    draw->AddText(
+        ImGui::GetFont(),
+        fontSize,
+        {min.x + 8.0f * scale, min.y + 3.0f * scale},
+        flashbackBadgeColor(replay.library.flashback),
+        badge.c_str()
+    );
 }
 
 float cardPreviewHeight(float width) { return std::max(0.0f, width - kCardLayout.previewInset * 2.0f) * 9.0f / 16.0f; }
@@ -347,6 +423,12 @@ std::string filterLabel(ReplayFilter filter) {
         return "playback.replayBrowser.filter.playable"_tr();
     case ReplayFilter::Broken:
         return "playback.replayBrowser.filter.broken"_tr();
+    case ReplayFilter::Favorites:
+        return "playback.replayBrowser.filter.favorites"_tr();
+    case ReplayFilter::Converted:
+        return "playback.replayBrowser.filter.converted"_tr();
+    case ReplayFilter::NotConverted:
+        return "playback.replayBrowser.filter.notConverted"_tr();
     default:
         return "playback.replayBrowser.filter.all"_tr();
     }
@@ -616,6 +698,9 @@ void SelectReplayScreen::rebuildVisible() {
         bool        pass   = replay.matches(mSearch);
         if (pass && mFilter == ReplayFilter::Playable) pass = replay.canOpen;
         if (pass && mFilter == ReplayFilter::Broken) pass = !replay.canOpen;
+        if (pass && mFilter == ReplayFilter::Favorites) pass = replay.library.favorite;
+        if (pass && mFilter == ReplayFilter::Converted) pass = replay.library.flashback == playback::io::FlashbackState::Converted;
+        if (pass && mFilter == ReplayFilter::NotConverted) pass = replay.library.flashback != playback::io::FlashbackState::Converted;
         if (pass) mVisible.push_back(index);
     }
 
@@ -859,7 +944,12 @@ void SelectReplayScreen::drawNavigation() {
     if (beginAnchoredPopup("##sort-menu", sortButtonMinimum, sortButtonMaximum)) {
         ImGui::SetWindowFontScale(kFontScaleNavControl);
         ImGui::TextDisabled("%s", filterLabelText.c_str());
-        for (auto filter : {ReplayFilter::All, ReplayFilter::Playable, ReplayFilter::Broken}) {
+        for (auto filter : {ReplayFilter::All,
+                            ReplayFilter::Playable,
+                            ReplayFilter::Broken,
+                            ReplayFilter::Favorites,
+                            ReplayFilter::Converted,
+                            ReplayFilter::NotConverted}) {
             if (ImGui::MenuItem(filterLabel(filter).c_str(), nullptr, mFilter == filter)) {
                 mFilter = filter;
                 rebuildVisible();
@@ -963,6 +1053,7 @@ void SelectReplayScreen::drawPreview(playback::state::ReplayBrowserEntry const& 
         }
         auto const alpha = static_cast<int>(std::lround(shown * 255.0f));
         drawList->AddImageRounded(texture, start, end, uv0, uv1, IM_COL32(255, 255, 255, alpha), rounding);
+        drawPreviewBadges(drawList, start, size, replay);
         ImGui::Dummy(size);
     } else {
         // Thumbnails still decoding get a plain placeholder; the label only appears once loading has clearly failed.
@@ -980,6 +1071,7 @@ void SelectReplayScreen::drawPreview(playback::state::ReplayBrowserEntry const& 
                 msg.c_str()
             );
         }
+        drawPreviewBadges(drawList, start, size, replay);
         ImGui::Dummy(size);
     }
 }
@@ -1030,6 +1122,27 @@ void SelectReplayScreen::drawCard(
         openSelected();
     } else if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
         select(replay.replayId, visibleIndex, ImGui::GetIO().KeyCtrl, ImGui::GetIO().KeyShift);
+    }
+
+    // Favorite star over the top left of the thumbnail (the filled star itself is drawn with the thumbnail).
+    {
+        float const radius   = std::clamp(previewWidth * 0.045f, 7.0f, 12.0f);
+        float const starSize = (radius + 8.0f) * 2.0f + 4.0f;
+        ImGui::SetCursorPos({kCardLayout.previewInset + 2.0f, kCardLayout.previewInset + 2.0f});
+        ImGui::InvisibleButton("##card-favorite", {starSize, starSize});
+        bool const starHovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) toggleFavorite({replay.replayId}, !replay.library.favorite);
+        ImVec2 const starCenter{
+            cardMinimum.x + kCardLayout.previewInset + radius + 8.0f,
+            cardMinimum.y + kCardLayout.previewInset + radius + 8.0f
+        };
+        if (!replay.library.favorite && (cardHovered || starHovered)) {
+            ImGui::GetWindowDrawList()->AddCircleFilled(starCenter, radius + 5.0f, IM_COL32(0, 0, 0, starHovered ? 170 : 110));
+            drawStar(ImGui::GetWindowDrawList(), starCenter, radius, 0, starHovered ? kColorStar : kColorTextDim);
+        } else if (replay.library.favorite && starHovered) {
+            drawStar(ImGui::GetWindowDrawList(), starCenter, radius, 0, kColorText);
+        }
+        if (starHovered) tooltip(replay.library.favorite ? "playback.replayBrowser.action.unfavorite"_tr().c_str() : "playback.replayBrowser.action.favorite"_tr().c_str());
     }
 
     // Keep full file details in the info-button tooltip without crowding the card body.
@@ -1086,6 +1199,13 @@ void SelectReplayScreen::drawCard(
         detailRow("playback.replayBrowser.field.size"_tr().c_str(), formatSize(replay.fileSize));
         detailRow("playback.replayBrowser.field.modified"_tr().c_str(), formatModifiedTime(replay.lastModified));
         detailRow("playback.replayBrowser.field.fileName"_tr().c_str(), replay.replayId);
+        if (!replay.library.tags.empty()) {
+            detailRow("playback.replayBrowser.field.tags"_tr().c_str(), playback::io::LibraryMeta::joinTags(replay.library.tags));
+        }
+        if (!replay.library.note.empty()) detailRow("playback.replayBrowser.field.note"_tr().c_str(), replay.library.note);
+        if (replay.library.flashback != playback::io::FlashbackState::None) {
+            detailRow("Flashback", flashbackBadgeText(replay.library.flashback));
+        }
         ImGui::Spacing();
         ImGui::TextWrapped("%s", "playback.replayBrowser.pathValue"_tr(replay.path.string()).c_str());
         if (!replay.canOpen) {
@@ -1623,10 +1743,20 @@ void SelectReplayScreen::drawDetails() {
             row("playback.replayBrowser.field.fileSize"_tr().c_str(), formatSize(selectedReplayEntry.fileSize));
             row("playback.replayBrowser.field.fileFormat"_tr().c_str(), fileFormat);
             row("playback.replayBrowser.field.filePath"_tr().c_str(), selectedReplayEntry.path.string(), true);
+            if (selectedReplayEntry.library.flashback != playback::io::FlashbackState::None) {
+                std::string text = flashbackBadgeText(selectedReplayEntry.library.flashback);
+                for (auto const& output : selectedReplayEntry.library.flashbackOutputs) {
+                    text += "  " + std::filesystem::path(std::u8string(output.begin(), output.end())).filename().string();
+                }
+                if (!selectedReplayEntry.library.flashbackError.empty()) text += "  (" + selectedReplayEntry.library.flashbackError + ")";
+                row("Flashback", text, true);
+            }
             ImGui::EndTable();
         }
         ImGui::PopStyleColor(4);
         ImGui::PopStyleVar();
+        ImGui::Dummy({0.0f, 10.0f});
+        drawLibraryEditor(selectedReplayEntry, detailWidth);
 
         if (!selectedReplayEntry.canOpen) {
             ImGui::Dummy({0.0f, 8.0f});
@@ -1648,7 +1778,7 @@ void SelectReplayScreen::drawDetails() {
 
         float const buttonWidth = std::max(
             0.0f,
-            (panelW - kDetailsLayout.panelPadding * 2.0f - kDetailsLayout.actionButtonGap * 2.0f) / 3.0f
+            (panelW - kDetailsLayout.panelPadding * 2.0f - kDetailsLayout.actionButtonGap * 3.0f) / 4.0f
         );
         float const buttonY = dividerY + kDetailsLayout.panelPadding;
         ImGui::SetWindowFontScale(kFontScaleSmall);
@@ -1663,6 +1793,16 @@ void SelectReplayScreen::drawDetails() {
         styleButton();
         if (ImGui::Button("playback.replayBrowser.action.edit"_tr().c_str(), {buttonWidth, kControlHeight})) {
             openRenameDialog();
+        }
+        popButtonStyle();
+        ImGui::EndDisabled();
+        ImGui::SameLine(0.0f, kDetailsLayout.actionButtonGap);
+        ImGui::BeginDisabled(
+            !selectedReplayEntry.canOpen || selectedReplayEntry.library.flashback == playback::io::FlashbackState::Converting
+        );
+        styleButton();
+        if (ImGui::Button("playback.replayBrowser.action.convert"_tr().c_str(), {buttonWidth, kControlHeight})) {
+            convertToFlashback({selectedReplayEntry.replayId});
         }
         popButtonStyle();
         ImGui::EndDisabled();
@@ -1698,9 +1838,9 @@ void SelectReplayScreen::drawActionBar() {
     std::string const summary =
         "playback.replayBrowser.selectedCount"_tr(mSelectedIds.size()) + "  路  " + formatSize(selectedBytes);
 
-    float const buttonWidth    = 140.0f;
+    float const buttonWidth    = 120.0f;
     float const buttonGap      = 10.0f;
-    float const groupWidth     = buttonWidth * 3.0f + buttonGap * 2.0f;
+    float const groupWidth     = buttonWidth * 5.0f + buttonGap * 4.0f;
     float const buttonY        = (kActionBarHeight - kControlHeight) * 0.5f;
     float const availableWidth = ImGui::GetContentRegionAvail().x;
     float const contentOriginX = ImGui::GetCursorPosX();
@@ -1734,6 +1874,34 @@ void SelectReplayScreen::drawActionBar() {
     popButtonStyle();
     ImGui::EndDisabled();
     ImGui::SameLine(0.0f, buttonGap);
+
+    // Favorite and Flashback conversion work on every selected replay.
+    std::vector<std::string> selection;
+    bool                     allFavorite = true;
+    bool                     canConvert  = false;
+    for (auto const& item : replays()) {
+        if (!mSelectedIds.contains(item.replayId)) continue;
+        selection.push_back(item.replayId);
+        allFavorite = allFavorite && item.library.favorite;
+        canConvert  = canConvert || (item.canOpen && item.library.flashback != playback::io::FlashbackState::Converting);
+    }
+    styleButton(allFavorite);
+    if (ImGui::Button(
+            (allFavorite ? "playback.replayBrowser.action.unfavorite"_tr() : "playback.replayBrowser.action.favorite"_tr()).c_str(),
+            {buttonWidth, kControlHeight}
+        )) {
+        toggleFavorite(selection, !allFavorite);
+    }
+    popButtonStyle();
+    ImGui::SameLine(0.0f, buttonGap);
+    ImGui::BeginDisabled(!canConvert);
+    styleButton();
+    if (ImGui::Button("playback.replayBrowser.action.convert"_tr().c_str(), {buttonWidth, kControlHeight})) {
+        convertToFlashback(selection);
+    }
+    popButtonStyle();
+    ImGui::EndDisabled();
+    ImGui::SameLine(0.0f, buttonGap);
     ImGui::PushStyleColor(ImGuiCol_Button, kColorDanger);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kColorDanger);
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, kColorDanger);
@@ -1744,6 +1912,58 @@ void SelectReplayScreen::drawActionBar() {
 
     ImGui::EndChild();
     ImGui::PopStyleColor();
+}
+
+void SelectReplayScreen::toggleFavorite(std::vector<std::string> replayIds, bool favorite) {
+    if (replayIds.empty()) return;
+    playback::state::EditorAction action{playback::state::EditorActionType::SetReplayFavorite};
+    action.replayIds = std::move(replayIds);
+    action.value     = favorite;
+    submit(std::move(action));
+}
+
+void SelectReplayScreen::convertToFlashback(std::vector<std::string> replayIds) {
+    if (replayIds.empty()) return;
+    playback::state::EditorAction action{playback::state::EditorActionType::ConvertReplayToFlashback};
+    action.replayIds = std::move(replayIds);
+    submit(std::move(action));
+}
+
+// Favorite, tags and a note for the selected replay. Text is saved when a field loses focus.
+void SelectReplayScreen::drawLibraryEditor(playback::state::ReplayBrowserEntry const& replay, float width) {
+    if (mMetaEditId != replay.replayId || (mMetaRevision != mSnapshotRevision && !ImGui::IsAnyItemActive())) {
+        mMetaEditId   = replay.replayId;
+        mMetaRevision = mSnapshotRevision;
+        auto const tags = playback::io::LibraryMeta::joinTags(replay.library.tags);
+        mTagsBuffer.fill(0);
+        mNoteBuffer.fill(0);
+        std::copy_n(tags.data(), std::min(tags.size(), mTagsBuffer.size() - 1), mTagsBuffer.data());
+        std::copy_n(replay.library.note.data(), std::min(replay.library.note.size(), mNoteBuffer.size() - 1), mNoteBuffer.data());
+    }
+    auto commit = [&] {
+        playback::state::EditorAction action{playback::state::EditorActionType::SetReplayDetails};
+        action.replayId       = replay.replayId;
+        action.details["tags"] = mTagsBuffer.data();
+        action.details["note"] = mNoteBuffer.data();
+        submit(std::move(action));
+    };
+
+    bool favorite = replay.library.favorite;
+    if (ImGui::Checkbox("playback.replayBrowser.action.favorite"_tr().c_str(), &favorite)) {
+        toggleFavorite({replay.replayId}, favorite);
+    }
+    ImGui::TextDisabled("%s", "playback.replayBrowser.field.tags"_tr().c_str());
+    ImGui::SetNextItemWidth(width);
+    ImGui::InputTextWithHint("##library-tags", "playback.replayBrowser.tagsHint"_tr().c_str(), mTagsBuffer.data(), mTagsBuffer.size());
+    if (ImGui::IsItemDeactivatedAfterEdit()) commit();
+    ImGui::TextDisabled("%s", "playback.replayBrowser.field.note"_tr().c_str());
+    ImGui::InputTextMultiline(
+        "##library-note",
+        mNoteBuffer.data(),
+        mNoteBuffer.size(),
+        {width, ImGui::GetTextLineHeightWithSpacing() * 3.0f + 8.0f}
+    );
+    if (ImGui::IsItemDeactivatedAfterEdit()) commit();
 }
 
 void SelectReplayScreen::drawDeleteDialog() {

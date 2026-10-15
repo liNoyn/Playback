@@ -73,7 +73,7 @@ ImU32 toastColor(ToastKind kind) {
 // The converter line of the HUD and the panel; empty when nothing is converted.
 std::string converterText(record::RecordingStatusSnapshot const& status, ImU32& tone) {
     tone = kInkDim;
-    if (status.mode == OutputMode::Playback) return {};
+    if (status.phase == RecordingPhase::Buffering || status.mode == OutputMode::Playback) return {};
     if (status.convert == ConvertTiming::AfterStop && status.phase != RecordingPhase::Idle) {
         return "playback.record.converter.afterStop"_tr();
     }
@@ -182,10 +182,14 @@ void drawRecordTab(record::RecordingStatusSnapshot const& status, settings::Sett
     float const width = ImGui::GetContentRegionAvail().x;
     bool const  flashBridge = config.liveStream.enabled && !config.liveStream.launchCommand.empty();
 
-    if (status.phase == RecordingPhase::Idle) {
+    bool const buffering = status.phase == RecordingPhase::Buffering;
+    if (status.phase == RecordingPhase::Idle || buffering) {
         auto const text = std::format("{}  {}   ({})", ICON_TRACK_ACTIVE, "playback.record.panel.start"_tr(), config.hotkeys.record);
         if (primaryButton(text.c_str(), kRed, {width, ImGui::GetFontSize() * 2.4f})) {
             control.submit({RecordCommand::Start, record::RecordingOptions{gChoice.mode, gChoice.convert}});
+        }
+        if (buffering) {
+            ImGui::TextColored(color(kInkDim), "%s", "playback.record.panel.startReplacesBuffer"_tr().c_str());
         }
     } else {
         float const third = (width - 2 * ImGui::GetStyle().ItemSpacing.x) / 3;
@@ -208,7 +212,7 @@ void drawRecordTab(record::RecordingStatusSnapshot const& status, settings::Sett
     }
 
     ImGui::Spacing();
-    bool const idle = status.phase == RecordingPhase::Idle;
+    bool const idle = status.phase == RecordingPhase::Idle || buffering;
     OutputMode    mode    = idle ? gChoice.mode : status.mode;
     ConvertTiming convert = idle ? gChoice.convert : status.convert;
 
@@ -232,10 +236,29 @@ void drawRecordTab(record::RecordingStatusSnapshot const& status, settings::Sett
         ImGui::TextColored(color(kInkDim), "%s", "playback.record.panel.flashbackOnlyNote"_tr(config.output.sourceKeep.days).c_str());
     }
 
+    if (config.instantReplay.enabled || buffering) {
+        heading("playback.record.panel.instantReplay"_tr());
+        if (buffering) {
+            ImGui::TextColored(color(kBlue), "%s %s", ICON_TRACK_ACTIVE, "playback.record.panel.bufferingNote"_tr(config.instantReplay.minutes).c_str());
+            float const half = (width - ImGui::GetStyle().ItemSpacing.x) / 2;
+            auto const  save = std::format("{}  {}   ({})", ICON_SAVE, "playback.record.panel.saveInstant"_tr(config.instantReplay.minutes), config.hotkeys.saveInstant);
+            if (primaryButton(save.c_str(), kBlue, {half, ImGui::GetFontSize() * 2.0f})) control.submit({RecordCommand::SaveInstant});
+            ImGui::SameLine();
+            if (primaryButton(std::format("{}  {}", ICON_STOP, "playback.record.panel.stopBuffer"_tr()).c_str(), kRaised, {half, ImGui::GetFontSize() * 2.0f})) {
+                control.submit({RecordCommand::StopBuffer});
+            }
+        } else if (status.phase == RecordingPhase::Idle) {
+            if (primaryButton("playback.record.panel.startBuffer"_tr().c_str(), kRaised)) control.submit({RecordCommand::StartBuffer});
+        }
+    }
+
     ImGui::Spacing();
     ImGui::Separator();
     label("playback.record.panel.state"_tr());
     switch (status.phase) {
+    case RecordingPhase::Buffering:
+        ImGui::TextColored(color(kBlue), "%s %s  %s", ICON_TRACK_ACTIVE, "playback.record.state.buffering"_tr().c_str(), elapsedText(status.elapsedSeconds).c_str());
+        break;
     case RecordingPhase::Idle:
         ImGui::TextColored(color(kInkDim), "%s", "playback.record.state.idle"_tr().c_str());
         break;
@@ -270,6 +293,81 @@ void drawRecordTab(record::RecordingStatusSnapshot const& status, settings::Sett
     label("playback.record.panel.freeSpace"_tr());
     if (status.freeGB) ImGui::Text("%.1f GB", *status.freeGB);
     else ImGui::TextColored(color(kInkDim), "-");
+}
+
+// Rules are checked in order; the first that matches the world joined decides.
+void drawAutoRecordRules(settings::Settings const& config) {
+    auto& store = settings::SettingsStore::getInstance();
+    auto  edit  = [&store](auto&& change) { store.update(change); };
+
+    int  remove = -1;
+    auto actions = std::vector<std::pair<settings::AutoRecordAction, std::string>>{
+        {settings::AutoRecordAction::Record, "playback.record.auto.record"_tr()},
+        {settings::AutoRecordAction::Ask,    "playback.record.auto.ask"_tr()   },
+        {settings::AutoRecordAction::Ignore, "playback.record.auto.ignore"_tr()},
+    };
+    for (size_t i = 0; i < config.autoRecord.rules.size(); ++i) {
+        auto const& rule = config.autoRecord.rules[i];
+        ImGui::PushID(static_cast<int>(i));
+        std::string summary = rule.name.empty() ? "playback.record.auto.unnamed"_tr() : rule.name;
+        summary += "  ";
+        if (!rule.world.empty()) summary += "playback.record.auto.worldIs"_tr(rule.world) + " ";
+        if (!rule.server.empty()) summary += "playback.record.auto.serverIs"_tr(rule.server) + " ";
+        if (!rule.dimension.empty()) summary += "playback.record.auto.dimensionIs"_tr(rule.dimension);
+        if (rule.world.empty() && rule.server.empty() && rule.dimension.empty()) summary += "playback.record.auto.everywhere"_tr();
+        ImGui::TextColored(color(kInk), "%s", summary.c_str());
+        auto action = rule.action;
+        if (segmented<settings::AutoRecordAction>("action", action, actions)) {
+            edit([i, action](settings::Settings& s) {
+                if (i < s.autoRecord.rules.size()) s.autoRecord.rules[i].action = action;
+            });
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton(ICON_TRASH)) remove = static_cast<int>(i);
+        if (rule.action == settings::AutoRecordAction::Record) {
+            // Output of the automatic recording: the default, or one mode for this rule
+            std::vector<std::pair<int, std::string>> outputs{
+                {-1, "playback.record.auto.defaultOutput"_tr()},
+                {0, "playback.record.output.playback"_tr()},
+                {1, "playback.record.output.both"_tr()},
+                {2, "playback.record.output.flashback"_tr()},
+            };
+            int selected = rule.output ? static_cast<int>(*rule.output) : -1;
+            if (segmented<int>("output", selected, outputs)) {
+                edit([i, selected](settings::Settings& s) {
+                    if (i >= s.autoRecord.rules.size()) return;
+                    if (selected < 0) s.autoRecord.rules[i].output.reset();
+                    else s.autoRecord.rules[i].output = static_cast<settings::OutputMode>(selected);
+                });
+            }
+        }
+        ImGui::PopID();
+        ImGui::Separator();
+    }
+    if (remove >= 0) {
+        edit([remove](settings::Settings& s) {
+            if (static_cast<size_t>(remove) < s.autoRecord.rules.size()) s.autoRecord.rules.erase(s.autoRecord.rules.begin() + remove);
+        });
+    }
+
+    auto const where = record::RecordControl::getInstance().currentWorld();
+    if (where.world.empty() && where.server.empty()) return;
+    auto add = [&](bool useServer) {
+        settings::AutoRecordRule rule;
+        if (useServer && !where.server.empty()) {
+            rule.server = where.server;
+            rule.name   = where.server;
+        } else {
+            rule.world = where.world;
+            rule.name  = where.world;
+        }
+        edit([rule](settings::Settings& s) { s.autoRecord.rules.push_back(rule); });
+    };
+    if (!where.world.empty() && ImGui::Button("playback.record.auto.addWorld"_tr(where.world).c_str())) add(false);
+    if (!where.server.empty()) {
+        ImGui::SameLine();
+        if (ImGui::Button("playback.record.auto.addServer"_tr(where.server).c_str())) add(true);
+    }
 }
 
 void drawSettingsTab(settings::Settings const& config) {
@@ -315,6 +413,33 @@ void drawSettingsTab(settings::Settings const& config) {
             edit([days](settings::Settings& s) { s.output.sourceKeep.days = days; });
         }
     }
+
+    heading("playback.record.settings.instantReplay"_tr());
+    bool instantEnabled = config.instantReplay.enabled;
+    if (ImGui::Checkbox("playback.record.settings.instantEnabled"_tr().c_str(), &instantEnabled)) {
+        edit([instantEnabled](settings::Settings& s) { s.instantReplay.enabled = instantEnabled; });
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", "playback.record.settings.instantHelp"_tr().c_str());
+    int instantMinutes = config.instantReplay.minutes;
+    label("playback.record.settings.instantMinutes"_tr());
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+    if (ImGui::SliderInt("##instantMinutes", &instantMinutes, 1, 10, "playback.record.settings.minutesFormat"_tr().c_str())) {
+        edit([instantMinutes](settings::Settings& s) { s.instantReplay.minutes = instantMinutes; });
+    }
+    int instantMegabytes = config.instantReplay.maxMegabytes;
+    label("playback.record.settings.instantMegabytes"_tr());
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+    if (ImGui::SliderInt("##instantMegabytes", &instantMegabytes, 256, 8192, "%d MB")) {
+        edit([instantMegabytes](settings::Settings& s) { s.instantReplay.maxMegabytes = instantMegabytes; });
+    }
+
+    heading("playback.record.settings.autoRecord"_tr());
+    bool autoEnabled = config.autoRecord.enabled;
+    if (ImGui::Checkbox("playback.record.settings.autoEnabled"_tr().c_str(), &autoEnabled)) {
+        edit([autoEnabled](settings::Settings& s) { s.autoRecord.enabled = autoEnabled; });
+    }
+    ImGui::TextColored(color(kInkDim), "%s", "playback.record.settings.autoHelp"_tr().c_str());
+    drawAutoRecordRules(config);
 
     heading("playback.record.settings.time"_tr());
     std::string timeMode = config.timeNormalization.mode;
@@ -389,7 +514,8 @@ void drawSettingsTab(settings::Settings const& config) {
             config.hotkeys.pause,
             config.hotkeys.marker,
             config.hotkeys.panel,
-            config.hotkeys.recordWithMode
+            config.hotkeys.recordWithMode,
+            config.hotkeys.saveInstant
         )
             .c_str()
     );
@@ -543,7 +669,10 @@ void drawStatusTab(record::RecordingStatusSnapshot const& status, settings::Sett
     }
     ImGui::SameLine();
     if (ImGui::Button("playback.record.status.openLog"_tr().c_str())) {
-        if (auto const* profile = _wgetenv(L"USERPROFILE")) openPath(std::filesystem::path(profile) / ".flashbridge" / "logs", false);
+        wchar_t profile[MAX_PATH]{};
+        if (GetEnvironmentVariableW(L"USERPROFILE", profile, MAX_PATH) > 0) {
+            openPath(std::filesystem::path(profile) / ".flashbridge" / "logs", false);
+        }
     }
 }
 
@@ -636,6 +765,11 @@ void drawHud() {
                 case RecordingPhase::Saving:
                     ImGui::TextColored(color(kBlue, opacity), "%s", "playback.record.state.saving"_tr().c_str());
                     break;
+                case RecordingPhase::Buffering:
+                    ImGui::TextColored(color(kBlue, opacity), "%s", ICON_TRACK_ACTIVE);
+                    ImGui::SameLine(0, 6);
+                    ImGui::TextColored(color(kInk, opacity), "%s", "playback.record.hud.buffer"_tr().c_str());
+                    break;
                 case RecordingPhase::Idle:
                     break;
                 }
@@ -691,7 +825,7 @@ void drawHud() {
 void drawPanel() {
     auto const config = settings::SettingsStore::getInstance().get();
     auto const status = record::RecordingStatus::getInstance().snapshot();
-    if (!gChoice.initialized || status.phase != RecordingPhase::Idle) {
+    if (!gChoice.initialized || (status.phase != RecordingPhase::Idle && status.phase != RecordingPhase::Buffering)) {
         gChoice = {true, config.output.mode, config.output.convert};
     }
 

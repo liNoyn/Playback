@@ -8,10 +8,18 @@
 #include "ll/api/event/EventBus.h"
 #include "ll/api/event/input/KeyInputEvent.h"
 #include "ll/api/i18n/I18n.h"
+#include "ll/api/memory/Hook.h"
+#include "ll/api/service/Bedrock.h"
 
 #include "mc/client/game/ClientInstance.h"
 #include "mc/client/player/LocalPlayer.h"
+#include "mc/client/events/PlayerJoinWorldContext.h"
 #include "mc/deps/input/Keyboard.h"
+#include "mc/events/NetworkType.h"
+#include "mc/client/social/MultiplayerServiceIdentifier.h"
+#include "mc/world/level/Level.h"
+#include "mc/world/level/dimension/Dimension.h"
+#include "mc/world/level/storage/LevelData.h"
 
 #include <Windows.h>
 
@@ -31,6 +39,7 @@ struct Bindings {
     settings::Hotkey pause;
     settings::Hotkey marker;
     settings::Hotkey panel;
+    settings::Hotkey saveInstant;
 };
 
 std::mutex             gBindingsMutex;
@@ -74,6 +83,7 @@ void handleKey(ll::event::KeyInputEvent& event) {
     else if (matches(bindings.record, key, ctrl, shift, alt)) command = RecordCommand::ToggleRecording;
     else if (matches(bindings.pause, key, ctrl, shift, alt)) command = RecordCommand::TogglePause;
     else if (matches(bindings.marker, key, ctrl, shift, alt)) command = RecordCommand::Marker;
+    else if (matches(bindings.saveInstant, key, ctrl, shift, alt)) command = RecordCommand::SaveInstant;
     if (!command) return;
 
     control.submit({*command});
@@ -121,6 +131,7 @@ void RecordControl::applySettings(settings::Settings const& settings) {
         parse(settings.hotkeys.pause, "pause"),
         parse(settings.hotkeys.marker, "marker"),
         parse(settings.hotkeys.panel, "panel"),
+        parse(settings.hotkeys.saveInstant, "saveInstant"),
     };
     std::scoped_lock lock(gBindingsMutex);
     gBindings = bindings;
@@ -141,6 +152,28 @@ void RecordControl::tick(ClientInstance& client) {
         requests.swap(mQueue);
     }
     for (auto const& request : requests) execute(request, client);
+
+    if (inWorld && mWorldCacheTicks++ % 20 == 0) {
+        auto const info = queryWorld();
+        std::scoped_lock lock(mWorldMutex);
+        mWorldCache = info;
+    } else if (!inWorld) {
+        std::scoped_lock lock(mWorldMutex);
+        mWorldCache = {};
+        mWorldCacheTicks = 0;
+    }
+
+    // A world was joined: once it has settled, auto-record rules decide what happens; then the instant replay
+    // buffer (if on) keeps itself running.
+    if (inWorld && mJoinPending.load(std::memory_order_acquire)) {
+        if (client.isInWorldAndNotShowingAnyMenuScreens() && ++mJoinSettleTicks >= 60) {
+            mJoinPending.store(false, std::memory_order_release);
+            mJoinSettleTicks = 0;
+            evaluateAutoRecord(client);
+        }
+    } else if (inWorld) {
+        keepBufferRunning(client);
+    }
 
     if (inWorld && !mRecoveryAnnounced) {
         mRecoveryAnnounced = true;
@@ -167,14 +200,27 @@ void RecordControl::execute(RecordRequest const& request, ClientInstance& client
 
     switch (request.command) {
     case RecordCommand::ToggleRecording:
-        if (recorder.isActive()) {
+        if (recorder.isBuffering()) {
+            recorder.start(); // a recording takes over from the instant replay buffer
+        } else if (recorder.isActive()) {
             recorder.stop();
         } else if (inWorld) {
             recorder.start();
         }
         break;
+    case RecordCommand::SaveInstant:
+        recorder.saveInstantReplay();
+        break;
+    case RecordCommand::StartBuffer:
+        mBufferSuppressed = false;
+        if (inWorld && !recorder.isActive()) recorder.startBuffer();
+        break;
+    case RecordCommand::StopBuffer:
+        mBufferSuppressed = true;
+        if (recorder.isBuffering()) recorder.stop();
+        break;
     case RecordCommand::Start:
-        if (!recorder.isActive() && inWorld) {
+        if ((!recorder.isActive() || recorder.isBuffering()) && inWorld) {
             if (request.options) recorder.start(*request.options);
             else recorder.start();
         } else if (recorder.isPaused()) {
@@ -266,9 +312,127 @@ void RecordControl::guardDisk(bool recording) {
     }
 }
 
+void RecordControl::noteJoinInfo(std::string server) {
+    std::scoped_lock lock(mWorldMutex);
+    mServerName = std::move(server);
+}
+
+void RecordControl::noteWorldJoined() {
+    mBufferSuppressed = false;
+    mJoinSettleTicks  = 0;
+    mJoinPending.store(true, std::memory_order_release);
+}
+
+void RecordControl::noteWorldLeft() {
+    mJoinPending.store(false, std::memory_order_release);
+    mJoinSettleTicks = 0;
+    std::scoped_lock lock(mWorldMutex);
+    mServerName.clear();
+}
+
+WorldInfo RecordControl::currentWorld() const {
+    std::scoped_lock lock(mWorldMutex);
+    return mWorldCache;
+}
+
+WorldInfo RecordControl::queryWorld() const {
+    WorldInfo info;
+    if (auto level = ll::service::getMultiPlayerLevel()) info.world = level->getLevelData().mLevelName;
+    if (auto client = ll::service::getClientInstance()) {
+        if (auto* player = client->getLocalPlayer()) info.dimension = *player->getDimension().mName;
+    }
+    std::scoped_lock lock(mWorldMutex);
+    info.server = mServerName;
+    return info;
+}
+
+void RecordControl::evaluateAutoRecord(ClientInstance& client) {
+    using namespace ll::i18n_literals;
+    auto& recorder = Recorder::getInstance();
+    if (recorder.isActive() && !recorder.isBuffering()) return; // the player is already recording
+
+    auto const config = settings::SettingsStore::getInstance().get();
+    auto const where  = queryWorld();
+    if (config.autoRecord.enabled) {
+        for (auto const& rule : config.autoRecord.rules) {
+            if (!settings::globMatch(rule.world, where.world) || !settings::globMatch(rule.server, where.server)
+                || !settings::globMatch(rule.dimension, where.dimension)) {
+                continue;
+            }
+            auto const label = rule.name.empty() ? where.world : rule.name;
+            getLogger().info("Auto-record rule \"{}\" matched (world \"{}\", server \"{}\")", label, where.world, where.server);
+            switch (rule.action) {
+            case settings::AutoRecordAction::Ignore:
+                mBufferSuppressed = true; // "do not record here" includes the instant replay buffer
+                return;
+            case settings::AutoRecordAction::Record:
+                recorder.start({rule.output.value_or(config.output.mode), config.output.convert});
+                if (recorder.isActive()) {
+                    RecordingStatus::getInstance().toast("playback.record.toast.autoStarted"_tr(label), ToastKind::Info, std::chrono::seconds(6));
+                }
+                return;
+            case settings::AutoRecordAction::Ask:
+                RecordingStatus::getInstance().toast(
+                    "playback.record.toast.autoAsk"_tr(label, config.hotkeys.record),
+                    ToastKind::Info,
+                    std::chrono::seconds(15)
+                );
+                return;
+            }
+        }
+    }
+    keepBufferRunning(client);
+}
+
+// The instant replay buffer runs whenever it is on and nothing else is being recorded.
+void RecordControl::keepBufferRunning(ClientInstance& client) {
+    auto& recorder = Recorder::getInstance();
+    auto const config = settings::SettingsStore::getInstance().get();
+    if (recorder.isBuffering() && !config.instantReplay.enabled) {
+        recorder.stop(); // turned off in the panel while it was running
+        return;
+    }
+    if (!config.instantReplay.enabled || mBufferSuppressed || recorder.isActive()) {
+        mBufferRestartDelay = 0;
+        return;
+    }
+    if (!client.isInWorldAndNotShowingAnyMenuScreens()) return;
+    // a short pause after a recording ended, so its save and the buffer start do not overlap
+    if (++mBufferRestartDelay < 60) return;
+    mBufferRestartDelay = 0;
+    recorder.startBuffer();
+}
+
+namespace {
+
+// The game announces the server being joined here; the world name itself is read from the level later.
+LL_TYPE_INSTANCE_HOOK(
+    PlaybackStartJoinGameHook,
+    ll::memory::HookPriority::Normal,
+    ClientInstance,
+    &ClientInstance::$onStartJoinGame,
+    void,
+    bool                                   isLocalServer,
+    std::string const&                     multiplayerCorrelationId,
+    std::string const&                     serverName,
+    std::string const&                     worldName,
+    NetworkType                            networkType,
+    Social::MultiplayerServiceIdentifier   service,
+    PlayerJoinWorldContext                 context
+) {
+    RecordControl::getInstance().noteJoinInfo(isLocalServer ? std::string{} : serverName);
+    origin(isLocalServer, multiplayerCorrelationId, serverName, worldName, networkType, service, context);
+}
+
+bool gJoinHookInstalled = false;
+
+} // namespace
+
 bool hookHotkeys(bool enable) {
     auto& eventBus = ll::event::EventBus::getInstance();
     if (enable) {
+        if (!gJoinHookInstalled) gJoinHookInstalled = PlaybackStartJoinGameHook::hook() == 0;
+        if (!gJoinHookInstalled) getLogger().warn("Unable to read the server name; server rules of auto-record will not match");
         if (gKeyListener) return true;
         // Ahead of the replay UI's key listener, which swallows keys while its own screens are open.
         gKeyListener = eventBus.emplaceListener<ll::event::KeyInputEvent>(&handleKey, ll::event::EventPriority::High);
@@ -278,6 +442,7 @@ bool hookHotkeys(bool enable) {
         eventBus.removeListener(gKeyListener);
         gKeyListener.reset();
     }
+    if (gJoinHookInstalled && PlaybackStartJoinGameHook::unhook()) gJoinHookInstalled = false;
     return true;
 }
 

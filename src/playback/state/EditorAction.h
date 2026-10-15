@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "playback/exporting/ExportTypes.h"
 #include "playback/state/editing/models/MathTypes.h"
@@ -31,6 +31,10 @@ enum class EditorActionType {
     ClearReplayBrowserError,
     SaveProject,
     LoadProject,
+    // library: replayIds (+ value for the favorite flag; details "tags" / "note" for SetReplayDetails)
+    SetReplayFavorite,
+    SetReplayDetails,
+    ConvertReplayToFlashback,
     UndoEditorEdit,
     RedoEditorEdit,
     AddFreeCamera,

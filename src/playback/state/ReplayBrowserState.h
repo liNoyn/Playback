@@ -1,4 +1,6 @@
-﻿#pragma once
+#pragma once
+
+#include "playback/io/LibraryMeta.h"
 
 #include <cctype>
 #include <cstdint>
@@ -31,9 +33,19 @@ struct ReplayBrowserEntry {
     std::filesystem::file_time_type lastModified{};
     bool                            canOpen{};
     std::string                     problem;
+    // favorite, tags, note and Flashback state from the library (library.json)
+    playback::io::LibraryEntry library;
 
     [[nodiscard]] std::string displayName() const {
         return replayName.empty() || replayName == "Unnamed" ? path.stem().string() : replayName;
+    }
+
+    template <class Lower>
+    [[nodiscard]] bool matchesTag(Lower const& lower, std::string const& needle) const {
+        for (auto const& tag : library.tags) {
+            if (lower(tag).find(needle) != std::string::npos) return true;
+        }
+        return false;
     }
 
     [[nodiscard]] bool matches(std::string_view filter) const {
@@ -44,7 +56,8 @@ struct ReplayBrowserEntry {
         };
         auto const needle = lower(filter);
         return needle.empty() || lower(displayName()).find(needle) != std::string::npos
-            || lower(replayId).find(needle) != std::string::npos || lower(worldName).find(needle) != std::string::npos;
+            || lower(replayId).find(needle) != std::string::npos || lower(worldName).find(needle) != std::string::npos
+            || lower(library.note).find(needle) != std::string::npos || matchesTag(lower, needle);
     }
 };
 

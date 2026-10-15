@@ -20,13 +20,15 @@
             "markerName": "Marker {}",
             "hud": {
                 "rec": "REC",
-                "free": "{} GB free"
+                "free": "{} GB free",
+                "buffer": "BUFFER"
             },
             "state": {
                 "idle": "Not recording",
                 "recording": "Recording",
                 "paused": "Paused",
-                "saving": "Saving..."
+                "saving": "Saving...",
+                "buffering": "Instant replay"
             },
             "converter": {
                 "afterStop": "FlashBridge converts after stop",
@@ -66,7 +68,13 @@
                 "flashBridgeMissing": "Not set up (install FlashBridge)",
                 "flashBridgeReady": "Ready",
                 "freeSpace": "Free space",
-                "closeHint": "{} or Esc to close"
+                "closeHint": "{} or Esc to close",
+                "instantReplay": "Instant replay",
+                "bufferingNote": "Keeping the last {} min",
+                "saveInstant": "Save last {} min",
+                "stopBuffer": "Stop buffering",
+                "startBuffer": "Start instant replay",
+                "startReplacesBuffer": "Starting a recording ends the instant replay buffer."
             },
             "settings": {
                 "recording": "Recording",
@@ -101,14 +109,23 @@
                 "showConverter": "FlashBridge",
                 "showMarkers": "Markers",
                 "hotkeys": "Hotkeys",
-                "hotkeyList": "Record / stop {}   Pause {}   Marker {}   Panel {} ({})\nChange them in settings.json.",
+                "hotkeyList": "Record / stop {}   Pause {}   Marker {}   Panel {} ({})   Save instant replay {}\nChange them in settings.json.",
                 "storage": "Storage",
                 "warnFree": "Warn below",
                 "stopFree": "Stop below",
                 "language": "Language",
                 "languageAuto": "Game language",
                 "languageNote": "Applies after restarting the game.",
-                "openFile": "Show settings.json"
+                "openFile": "Show settings.json",
+                "instantReplay": "Instant replay",
+                "instantEnabled": "Keep the last minutes while playing",
+                "instantHelp": "Records in short pieces all the time (a small stall every chunk) and drops old ones. Save with the hotkey.",
+                "instantMinutes": "Length",
+                "minutesFormat": "%d min",
+                "instantMegabytes": "Disk limit",
+                "autoRecord": "Auto-record",
+                "autoEnabled": "Apply rules when joining a world",
+                "autoHelp": "The first rule that matches the world or server decides. * and ? work in names."
             },
             "status": {
                 "setup": "Setup",
@@ -145,7 +162,29 @@
                 "restored": "Restored {}",
                 "diskLow": "Low disk space: {:.1f} GB left",
                 "diskStopped": "Disk almost full: recording stopped and saved.",
-                "copied": "Copied to the clipboard"
+                "copied": "Copied to the clipboard",
+                "notBuffering": "Instant replay is not running. Turn it on in the panel (F6).",
+                "instantSaving": "Saving the instant replay...",
+                "instantEmpty": "Nothing has been buffered yet.",
+                "instantSaved": "Saved {} ({})",
+                "instantFailed": "The instant replay could not be saved: {}",
+                "noFlashBridgeConvert": "FlashBridge is not set up, so the replay cannot be converted.",
+                "convertStarted": "Converting {} for Flashback...",
+                "autoStarted": "Recording started by rule \"{}\"",
+                "autoAsk": "Rule \"{}\" matched. Press {} to start recording."
+            },
+            "auto": {
+                "record": "Record",
+                "ask": "Ask",
+                "ignore": "Don't record",
+                "unnamed": "(unnamed)",
+                "worldIs": "world: {}",
+                "serverIs": "server: {}",
+                "dimensionIs": "dimension: {}",
+                "everywhere": "everywhere",
+                "defaultOutput": "Default output",
+                "addWorld": "Add a rule for world \"{}\"",
+                "addServer": "Add a rule for server \"{}\""
             }
         },
         "replayBrowser": {
@@ -182,7 +221,10 @@
             "filter": {
                 "all": "All",
                 "playable": "Playable only",
-                "broken": "Unavailable only"
+                "broken": "Unavailable only",
+                "favorites": "Favorites only",
+                "converted": "Converted to Flashback",
+                "notConverted": "Not converted yet"
             },
             "sort": {
                 "name": "Name",
@@ -202,7 +244,9 @@
                 "fileSize": "File size",
                 "fileFormat": "File format",
                 "fileName": "File name",
-                "filePath": "File path"
+                "filePath": "File path",
+                "tags": "Tags",
+                "note": "Note"
             },
             "action": {
                 "openReplay": "Open replay",
@@ -210,7 +254,10 @@
                 "showInFolder": "Show in folder",
                 "delete": "Delete",
                 "open": "Open",
-                "edit": "Edit"
+                "edit": "Edit",
+                "favorite": "Favorite",
+                "unfavorite": "Unfavorite",
+                "convert": "Flashback"
             },
             "dialog": {
                 "cancel": "Cancel",
@@ -244,6 +291,13 @@
                 "renameMissingMetadata": "Replay archive is missing metadata.json and cannot be renamed",
                 "parseMetadata": "Unable to parse replay metadata: {}",
                 "renameFile": "Unable to rename replay file: {}"
+            },
+            "tagsHint": "Separate with commas",
+            "flashback": {
+                "converting": "Flashback...",
+                "converted": "Flashback",
+                "unverified": "Flashback (unchecked)",
+                "failed": "Flashback failed"
             }
         },
         "refactorEditor": {

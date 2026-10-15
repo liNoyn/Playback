@@ -163,6 +163,7 @@ Settings fromJson(Json const& json) {
     read(hotkeys, "pause", settings.hotkeys.pause);
     read(hotkeys, "marker", settings.hotkeys.marker);
     read(hotkeys, "panel", settings.hotkeys.panel);
+    read(hotkeys, "saveInstant", settings.hotkeys.saveInstant);
 
     auto const& hud = section(json, "hud");
     read(hud, "enabled", settings.hud.enabled);
@@ -195,6 +196,31 @@ Settings fromJson(Json const& json) {
     read(live, "port", settings.liveStream.port);
     read(live, "launchCommand", settings.liveStream.launchCommand);
     read(live, "maxQueuedMegabytes", settings.liveStream.maxQueuedMegabytes);
+
+    auto const& instant = section(json, "instantReplay");
+    read(instant, "enabled", settings.instantReplay.enabled);
+    read(instant, "minutes", settings.instantReplay.minutes);
+    read(instant, "maxMegabytes", settings.instantReplay.maxMegabytes);
+    read(instant, "chunkSeconds", settings.instantReplay.chunkSeconds);
+    settings.instantReplay.minutes      = std::clamp(settings.instantReplay.minutes, 1, 30);
+    settings.instantReplay.maxMegabytes = std::clamp(settings.instantReplay.maxMegabytes, 256, 16384);
+    settings.instantReplay.chunkSeconds = std::clamp(settings.instantReplay.chunkSeconds, 10, 120);
+
+    auto const& autoRecord = section(json, "autoRecord");
+    read(autoRecord, "enabled", settings.autoRecord.enabled);
+    if (auto const it = autoRecord.find("rules"); it != autoRecord.end() && it->is_array()) {
+        for (auto const& entry : *it) {
+            if (!entry.is_object()) continue;
+            AutoRecordRule rule;
+            read(entry, "name", rule.name);
+            read(entry, "world", rule.world);
+            read(entry, "server", rule.server);
+            read(entry, "dimension", rule.dimension);
+            rule.action = parseAutoRecordAction(readString(entry, "action")).value_or(rule.action);
+            if (auto const mode = parseOutputMode(readString(entry, "output"))) rule.output = *mode;
+            settings.autoRecord.rules.push_back(std::move(rule));
+        }
+    }
 
     read(section(json, "ui"), "reduceMotion", settings.ui.reduceMotion);
     return settings;
@@ -231,6 +257,7 @@ void toJson(Settings const& settings, Json& json) {
     hotkeys["pause"]          = settings.hotkeys.pause;
     hotkeys["marker"]         = settings.hotkeys.marker;
     hotkeys["panel"]          = settings.hotkeys.panel;
+    hotkeys["saveInstant"]    = settings.hotkeys.saveInstant;
 
     auto& hud            = sectionOf("hud");
     hud["enabled"]       = settings.hud.enabled;
@@ -256,6 +283,28 @@ void toJson(Settings const& settings, Json& json) {
     live["port"]               = settings.liveStream.port;
     live["launchCommand"]      = settings.liveStream.launchCommand;
     live["maxQueuedMegabytes"] = settings.liveStream.maxQueuedMegabytes;
+
+    auto& instant           = sectionOf("instantReplay");
+    instant["enabled"]      = settings.instantReplay.enabled;
+    instant["minutes"]      = settings.instantReplay.minutes;
+    instant["maxMegabytes"] = settings.instantReplay.maxMegabytes;
+    instant["chunkSeconds"] = settings.instantReplay.chunkSeconds;
+
+    auto& autoRecord      = sectionOf("autoRecord");
+    autoRecord["enabled"] = settings.autoRecord.enabled;
+    Json rules            = Json::array();
+    for (auto const& rule : settings.autoRecord.rules) {
+        Json entry{
+            {"name",      rule.name                     },
+            {"world",     rule.world                    },
+            {"server",    rule.server                   },
+            {"dimension", rule.dimension                },
+            {"action",    toString(rule.action)         }
+        };
+        if (rule.output) entry["output"] = toString(*rule.output);
+        rules.push_back(std::move(entry));
+    }
+    autoRecord["rules"] = std::move(rules);
 
     sectionOf("ui")["reduceMotion"] = settings.ui.reduceMotion;
 }
@@ -287,6 +336,49 @@ std::optional<OutputMode> parseOutputMode(std::string_view text) {
     if (value == "both") return OutputMode::Both;
     if (value == "flashback") return OutputMode::Flashback;
     return std::nullopt;
+}
+
+std::string_view toString(AutoRecordAction action) {
+    switch (action) {
+    case AutoRecordAction::Record:
+        return "record";
+    case AutoRecordAction::Ask:
+        return "ask";
+    case AutoRecordAction::Ignore:
+        return "ignore";
+    }
+    return "record";
+}
+
+std::optional<AutoRecordAction> parseAutoRecordAction(std::string_view text) {
+    auto const value = lower(trim(text));
+    if (value == "record") return AutoRecordAction::Record;
+    if (value == "ask") return AutoRecordAction::Ask;
+    if (value == "ignore") return AutoRecordAction::Ignore;
+    return std::nullopt;
+}
+
+bool globMatch(std::string_view pattern, std::string_view text) {
+    if (pattern.empty()) return true;
+    auto const p = lower(pattern);
+    auto const t = lower(text);
+    size_t pi = 0, ti = 0, star = std::string::npos, mark = 0;
+    while (ti < t.size()) {
+        if (pi < p.size() && (p[pi] == '?' || p[pi] == t[ti])) {
+            ++pi;
+            ++ti;
+        } else if (pi < p.size() && p[pi] == '*') {
+            star = pi++;
+            mark = ti;
+        } else if (star != std::string::npos) {
+            pi = star + 1;
+            ti = ++mark;
+        } else {
+            return false;
+        }
+    }
+    while (pi < p.size() && p[pi] == '*') ++pi;
+    return pi == p.size();
 }
 
 std::string_view toString(ConvertTiming timing) { return timing == ConvertTiming::Live ? "live" : "afterStop"; }

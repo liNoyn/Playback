@@ -6,8 +6,10 @@
 #include "playback/io/LiveStream.h"
 #include "playback/packet/PacketLifecycle.h"
 #include "playback/record/ChunkMutationBarrier.h"
+#include "playback/io/LibraryMeta.h"
 #include "playback/record/RecordingFiles.h"
 #include "playback/record/RecordingStatus.h"
+#include "playback/record/ReplayCompactor.h"
 #include "playback/record/TickClock.h"
 #include "playback/settings/Settings.h"
 #include "playback/utils/PathUtils.h"
@@ -561,6 +563,16 @@ LiveStatusCallback statusCallback(std::shared_ptr<RecordingOutcome> outcome) {
         std::scoped_lock lock(outcome->mutex);
         if (outcome->reported) return;
         outcome->reported = true;
+        if (!outcome->replayFile.empty()) {
+            io::LibraryMeta::getInstance().setFlashback(
+                outcome->replayFile.filename().string(),
+                !result.ok        ? io::FlashbackState::Failed
+                : result.verified ? io::FlashbackState::Converted
+                                  : io::FlashbackState::Unverified,
+                result.outputs,
+                result.error
+            );
+        }
         if (result.ok && result.verified) {
             auto const name = result.outputs.empty() ? std::string{}
                                                      : std::filesystem::path(result.outputs.front()).filename().string();
@@ -579,6 +591,177 @@ LiveStatusCallback statusCallback(std::shared_ptr<RecordingOutcome> outcome) {
 }
 
 } // namespace
+
+// One recording session of the instant replay buffer: its folder (chunk files and chunk cache) goes away with it,
+// unless an export that still reads from it keeps it alive.
+struct BufferEpoch {
+    std::filesystem::path    dir;
+    std::vector<BufferChunk> chunks;
+    uint64_t                 bytes{};
+
+    ~BufferEpoch() {
+        std::error_code ec;
+        if (!dir.empty()) std::filesystem::remove_all(dir, ec);
+    }
+};
+
+// What a save of the instant replay needs, kept alive until the replay is written.
+struct InstantExportJob {
+    struct Source {
+        std::shared_ptr<BufferEpoch> epoch; // null: the epoch that was being written (copied to stagingDir)
+        BufferChunk                  chunk;
+    };
+
+    std::vector<Source>   sources; // oldest first
+    std::filesystem::path stagingDir;
+    PlaybackMeta          meta;
+
+    ~InstantExportJob() {
+        std::error_code ec;
+        if (!stagingDir.empty()) std::filesystem::remove_all(stagingDir, ec);
+    }
+};
+
+namespace {
+
+uint64_t directorySize(std::filesystem::path const& dir) {
+    uint64_t        total = 0;
+    std::error_code ec;
+    for (auto it = std::filesystem::recursive_directory_iterator(dir, ec);
+         !ec && it != std::filesystem::recursive_directory_iterator();
+         it.increment(ec)) {
+        std::error_code sizeError;
+        if (it->is_regular_file(sizeError)) total += it->file_size(sizeError);
+    }
+    return total;
+}
+
+std::string formatClock(int seconds) { return std::format("{}:{:02}", seconds / 60, seconds % 60); }
+
+// Cuts the saved window out of the buffer into a replay in the library (background thread).
+void runInstantExport(std::shared_ptr<InstantExportJob> job) {
+    using namespace ll::i18n_literals;
+    auto&                 status = RecordingStatus::getInstance();
+    std::filesystem::path outDir;
+    try {
+        outDir = utils::PathUtils::createTemp(uuidReplayName() + "-instant-export");
+
+        std::vector<CompactChunk> chunks;
+        for (auto const& source : job->sources) {
+            auto const base = source.epoch ? source.epoch->dir : job->stagingDir;
+            chunks.push_back({base / source.chunk.name, base / "level_chunk_caches"});
+        }
+        auto const compacted = compactChunks(chunks, outDir);
+        if (!compacted.ok) throw std::runtime_error(compacted.error);
+
+        auto meta = job->meta;
+        meta.chunks.clear();
+        meta.markers.clear();
+        int const firstTick = job->sources.front().chunk.startTick;
+        int       total     = 0;
+        for (size_t i = 0; i < job->sources.size(); ++i) {
+            auto const& chunk = job->sources[i].chunk;
+            meta.chunks.insert_or_assign(
+                "chunk_" + std::to_string(i) + ".bin",
+                PlaybackChunkMeta{chunk.ticks, i > 0 && chunk.forcePlaySnapshot}
+            );
+            total += chunk.ticks;
+        }
+        meta.totalTicks = total;
+        for (auto const& marker : job->meta.markers) {
+            if (marker.tick >= firstTick && marker.tick <= firstTick + total) {
+                meta.markers.push_back({marker.tick - firstTick, marker.name, marker.color});
+            }
+        }
+        {
+            std::ofstream out(outDir / "metadata.json", std::ios::binary | std::ios::trunc);
+            out << meta.toJson();
+            if (!out) throw std::runtime_error("cannot write metadata.json");
+        }
+
+        auto const      replayDir = utils::PathUtils::getReplaysDir();
+        std::error_code ec;
+        std::filesystem::create_directories(replayDir, ec);
+        auto const outputPath =
+            replayDir / findAvailableReplayName(replayDir, currentReplayTimestampName() + "-instant");
+        if (!ReplayExporter::exportReplay(outDir, outputPath, "")) {
+            throw std::runtime_error("the replay could not be exported");
+        }
+
+        getLogger()
+            .info("Saved the instant replay {} ({} ticks from {} chunks)", outputPath.string(), total, chunks.size());
+        io::LibraryMeta::getInstance().addTag(outputPath.filename().string(), "instant");
+        status.toast(
+            "playback.record.toast.instantSaved"_tr(outputPath.filename().string(), formatClock(total / 20)),
+            ToastKind::Success,
+            std::chrono::seconds(8)
+        );
+
+        auto const config = settings::SettingsStore::getInstance().get();
+        if (config.output.mode != settings::OutputMode::Playback && config.liveStream.enabled
+            && !config.liveStream.launchCommand.empty()) {
+            auto outcome        = std::make_shared<RecordingOutcome>();
+            outcome->mode       = config.output.mode;
+            outcome->keep       = config.output.sourceKeep;
+            outcome->replayFile = outputPath;
+            io::LibraryMeta::getInstance().setFlashback(outputPath.filename().string(), io::FlashbackState::Converting);
+            nlohmann::ordered_json finish{
+                {"replayFile", pathToUtf8(outputPath)},
+                {"metadata", nlohmann::ordered_json::parse(meta.toJson(), nullptr, false)}
+            };
+            if (finish["metadata"].is_discarded()) finish["metadata"] = nlohmann::ordered_json::object();
+            LiveStream::convertExportedFile(
+                config.liveStream,
+                helloJson(meta, RecordingOptions{config.output.mode, settings::ConvertTiming::AfterStop}, config),
+                finish.dump(),
+                statusCallback(outcome)
+            );
+        }
+    } catch (std::exception const& exception) {
+        getLogger().error("Unable to save the instant replay: {}", exception.what());
+        status.toast(
+            "playback.record.toast.instantFailed"_tr(std::string(exception.what())),
+            ToastKind::Error,
+            std::chrono::seconds(10)
+        );
+        std::error_code ec;
+        if (!outDir.empty()) std::filesystem::remove_all(outDir, ec);
+    }
+}
+
+} // namespace
+
+bool convertReplayToFlashback(std::filesystem::path const& replayFile) {
+    using namespace ll::i18n_literals;
+    auto const config = settings::SettingsStore::getInstance().get();
+    if (!config.liveStream.enabled || config.liveStream.launchCommand.empty()) {
+        RecordingStatus::getInstance()
+            .toast("playback.record.toast.noFlashBridgeConvert"_tr(), ToastKind::Warning, std::chrono::seconds(8));
+        return false;
+    }
+    PlaybackMeta meta;
+    meta.gameVersion    = PlaybackMeta::currentGameVersion();
+    auto outcome        = std::make_shared<RecordingOutcome>();
+    outcome->mode       = settings::OutputMode::Both; // the library never throws a recording away
+    outcome->replayFile = replayFile;
+    io::LibraryMeta::getInstance().setFlashback(replayFile.filename().string(), io::FlashbackState::Converting);
+    nlohmann::ordered_json finish{
+        {"replayFile", pathToUtf8(replayFile)},
+        {"metadata",   nlohmann::ordered_json::object()}
+    };
+    LiveStream::convertExportedFile(
+        config.liveStream,
+        helloJson(meta, RecordingOptions{settings::OutputMode::Both, settings::ConvertTiming::AfterStop}, config),
+        finish.dump(),
+        statusCallback(outcome)
+    );
+    RecordingStatus::getInstance().toast(
+        "playback.record.toast.convertStarted"_tr(replayFile.filename().string()),
+        ToastKind::Info,
+        std::chrono::seconds(5)
+    );
+    return true;
+}
 
 PlaybackMeta PlaybackMeta::fromJson(std::string_view json) {
     auto j = nlohmann::ordered_json::parse(json);
@@ -613,6 +796,9 @@ void Recorder::start(RecordingOptions options) {
         getLogger().error("Recording requires a local player");
         return;
     }
+
+    // A recording takes over from the instant replay buffer, whose data is dropped.
+    if (mBufferMode && mState.load() != State::Idle) cancelRecording("", true);
 
     if (mState.load() == State::Paused) {
         mState = State::Recording;
@@ -666,7 +852,55 @@ void Recorder::start(RecordingOptions options) {
     );
 }
 
+void Recorder::startBuffer() {
+    auto  clientInstance = ll::service::getClientInstance();
+    auto* localPlayer    = clientInstance ? clientInstance->getLocalPlayer() : nullptr;
+    if (!localPlayer || playback::Playback::getInstance().isReplayMode() || mState.load() != State::Idle) return;
+
+    auto const config = settings::SettingsStore::getInstance().get();
+    mBufferMode       = true;
+    mWriteTickInfo    = !config.recording.compatibleFormat;
+    mOptions          = {config.output.mode, config.output.convert};
+    mBufferChunkTicks  = config.instantReplay.chunkSeconds * 20;
+    mBufferWindowTicks = config.instantReplay.minutes * 60 * 20;
+    mBufferMaxBytes    = static_cast<uint64_t>(config.instantReplay.maxMegabytes) << 20;
+
+    resetStateForNewRecording();
+    mRecordedLocalPlayerId        = RecordedPlayerUniqueId;
+    mRecordedLocalPlayerRuntimeId = RecordedPlayerRuntimeId;
+    mRecordedLocalPlayerUuid      = mce::UUID::random();
+    if (auto error = mAsyncReplaySaver->getError()) {
+        cancelRecording(*error);
+        return;
+    }
+    if (!hookNetwork(true)) {
+        cancelRecording("Required replay network hooks are unavailable");
+        return;
+    }
+
+    mState = State::Recording;
+    RecordingStatus::getInstance().setRecording(mOptions.mode, mOptions.convert, false);
+    RecordingStatus::getInstance().setPhase(RecordingPhase::Buffering);
+    getLogger().info(
+        "Instant replay started (last {} min, {} s chunks, at most {} MB)",
+        config.instantReplay.minutes,
+        config.instantReplay.chunkSeconds,
+        config.instantReplay.maxMegabytes
+    );
+}
+
+void Recorder::saveInstantReplay() {
+    using namespace ll::i18n_literals;
+    if (!isBuffering()) {
+        RecordingStatus::getInstance().toast("playback.record.toast.notBuffering"_tr(), ToastKind::Warning);
+        return;
+    }
+    if (std::exchange(mInstantSavePending, true)) return;
+    RecordingStatus::getInstance().toast("playback.record.toast.instantSaving"_tr(), ToastKind::Info, std::chrono::seconds(3));
+}
+
 void Recorder::pause() {
+    if (mBufferMode) return;
     if (mState.load() != State::Recording) return;
     mState = State::Paused;
     TickClock::getInstance().setPaused(true);
@@ -682,7 +916,7 @@ bool Recorder::addMarker(std::string name, int color) {
 
 void Recorder::publishProgress() {
     RecordingStatus::getInstance().setProgress(
-        mWrittenTicks / 20.0,
+        (mBufferMode ? std::min(mWrittenTicks, mBufferWindowTicks) : mWrittenTicks) / 20.0,
         static_cast<int>(mMetadata.markers.size()),
         TickClock::getInstance().recentTps()
     );
@@ -691,6 +925,11 @@ void Recorder::publishProgress() {
 // Starts mirroring to FlashBridge as the output options ask: a live stream, or nothing until the recording is
 // exported ("after stop"), or nothing at all ("Playback only").
 void Recorder::startOutput() {
+    // The instant replay buffer is only converted when it is saved.
+    if (mBufferMode) {
+        mOutcome.reset();
+        return;
+    }
     auto const config = settings::SettingsStore::getInstance().get();
     mOutcome          = std::make_shared<RecordingOutcome>();
     mOutcome->mode    = mOptions.mode;
@@ -701,6 +940,11 @@ void Recorder::startOutput() {
 }
 
 void Recorder::stop() {
+    // Stopping the instant replay buffer throws its data away; saving it is a separate action.
+    if (mBufferMode) {
+        if (mState.load() != State::Idle) cancelRecording("", true);
+        return;
+    }
     State state = mState.exchange(State::Closing);
     if (state == State::Idle) {
         mState = State::Idle;
@@ -781,6 +1025,7 @@ void Recorder::saveRecording() {
         std::scoped_lock lock(mOutcome->mutex);
         mOutcome->replayFile = outputPath;
     }
+    io::LibraryMeta::getInstance().setFlashback(outputPath.filename().string(), io::FlashbackState::Converting);
     nlohmann::ordered_json finish{
         {"replayFile", pathToUtf8(outputPath)},
         {"metadata", nlohmann::ordered_json::parse(mMetadata.toJson(), nullptr, false)}
@@ -852,6 +1097,9 @@ void Recorder::resetStateForNewRecording() {
     mLiveStream = nullptr;
     startOutput();
     mAsyncReplaySaver = std::make_unique<AsyncReplaySaver>(mLiveStream);
+    mFinishedEpochs.clear();
+    mEpochChunks.clear();
+    mInstantSavePending            = false;
     mChunkIndex                    = 0;
     mTicksInCurrentChunk           = 0;
     mWrittenTicks                  = 0;
@@ -937,8 +1185,10 @@ void Recorder::endTick(bool close) {
         return;
     }
 
-    bool const rotateChunk =
-        !close && !mNeedsInitialSnapshot.load() && mHasOpenChunk && mTicksInCurrentChunk + 1 >= RECORD_CHUNK_TICKS;
+    // A pending instant replay save closes the chunk early so the newest moments are in a finished chunk file.
+    bool const rotateChunk = !close && !mNeedsInitialSnapshot.load() && mHasOpenChunk
+                          && (mTicksInCurrentChunk + 1 >= chunkTickLimit()
+                              || (mInstantSavePending && mTicksInCurrentChunk >= 1));
 
     if (rotateChunk) {
         auto                                captureStart = std::chrono::steady_clock::now();
@@ -957,7 +1207,8 @@ void Recorder::endTick(bool close) {
         }
 
         if (!writeLocalPlayerState() || !flushGamePackets() || !writeEntityMovements() || !writeTickBoundary()
-            || !finishCurrentChunk(false) || !writeSnapshot() || !commitChunkSnapshot(elapsed, barrierWait)) {
+            || !finishCurrentChunk(false) || !afterBufferChunk() || !writeSnapshot()
+            || !commitChunkSnapshot(elapsed, barrierWait)) {
             return;
         }
         return;
@@ -2218,6 +2469,10 @@ bool Recorder::finishCurrentChunk(bool close) {
         return false;
     }
 
+    if (mBufferMode) {
+        mEpochChunks.push_back({chunkName, mTicksInCurrentChunk, mCurrentChunkForcePlaySnapshot, mWrittenTicks - mTicksInCurrentChunk});
+    }
+
     ++mChunkIndex;
     mTicksInCurrentChunk           = 0;
     mHasOpenChunk                  = false;
@@ -2230,13 +2485,129 @@ bool Recorder::finishCurrentChunk(bool close) {
     return true;
 }
 
+// Instant replay: a chunk was just closed. Serves a pending save, then starts a new epoch (a fresh recording
+// session with its own chunk cache) when this one is full, and drops epochs the window no longer needs.
+bool Recorder::afterBufferChunk() {
+    if (!mBufferMode) return true;
+
+    if (std::exchange(mInstantSavePending, false)) queueInstantExport();
+
+    int epochTicks = 0;
+    for (auto const& chunk : mEpochChunks) epochTicks += chunk.ticks;
+    auto const currentBytes = mAsyncReplaySaver ? directorySize(mAsyncReplaySaver->recordPath()) : 0;
+    if (epochTicks >= mBufferWindowTicks || currentBytes > mBufferMaxBytes / 2) return rotateBufferEpoch();
+    return true;
+}
+
+bool Recorder::rotateBufferEpoch() {
+    if (!mAsyncReplaySaver) return true;
+    // finish() writes out everything queued (including staging copies for saves in progress) and the chunk cache.
+    auto saver = std::move(mAsyncReplaySaver);
+    auto path  = saver->finish();
+    if (auto error = saver->getError()) {
+        mAsyncReplaySaver = std::move(saver);
+        failRecording("Replay saver failed: " + *error);
+        return false;
+    }
+    saver.reset();
+    if (path.empty()) {
+        failRecording("The instant replay buffer could not be closed");
+        return false;
+    }
+
+    auto epoch    = std::make_shared<BufferEpoch>();
+    epoch->dir    = path;
+    epoch->chunks = std::move(mEpochChunks);
+    epoch->bytes  = directorySize(path);
+    mEpochChunks.clear();
+    mFinishedEpochs.push_back(std::move(epoch));
+
+    auto newerTicks = [this](size_t from) {
+        int ticks = 0;
+        for (size_t i = from; i < mFinishedEpochs.size(); ++i) {
+            for (auto const& chunk : mFinishedEpochs[i]->chunks) ticks += chunk.ticks;
+        }
+        return ticks;
+    };
+    while (mFinishedEpochs.size() >= 2 && newerTicks(1) >= mBufferWindowTicks) {
+        mFinishedEpochs.erase(mFinishedEpochs.begin());
+    }
+    uint64_t total = 0;
+    for (auto const& finished : mFinishedEpochs) total += finished->bytes;
+    while (mFinishedEpochs.size() > 1 && total > mBufferMaxBytes) {
+        total -= mFinishedEpochs.front()->bytes;
+        mFinishedEpochs.erase(mFinishedEpochs.begin());
+    }
+
+    mAsyncReplaySaver = std::make_unique<AsyncReplaySaver>(nullptr);
+    if (auto error = mAsyncReplaySaver->getError()) {
+        failRecording("Unable to start a new instant replay buffer: " + *error);
+        return false;
+    }
+    mChunkIndex = 0;
+    mMetadata.chunks.clear();
+    return true;
+}
+
+// Picks the newest chunks that cover the window, copies the part still being written (the worker thread does that
+// once the chunk just closed is on disk) and cuts the replay in the background.
+void Recorder::queueInstantExport() {
+    using namespace ll::i18n_literals;
+    auto job  = std::make_shared<InstantExportJob>();
+    int  ticks = 0;
+    std::vector<InstantExportJob::Source> newestFirst;
+    std::vector<std::string>              staged;
+    for (auto it = mEpochChunks.rbegin(); it != mEpochChunks.rend() && ticks < mBufferWindowTicks; ++it) {
+        newestFirst.push_back({nullptr, *it});
+        staged.push_back(it->name);
+        ticks += it->ticks;
+    }
+    for (auto epoch = mFinishedEpochs.rbegin(); epoch != mFinishedEpochs.rend() && ticks < mBufferWindowTicks; ++epoch) {
+        for (auto it = (*epoch)->chunks.rbegin(); it != (*epoch)->chunks.rend() && ticks < mBufferWindowTicks; ++it) {
+            newestFirst.push_back({*epoch, *it});
+            ticks += it->ticks;
+        }
+    }
+    if (newestFirst.empty()) {
+        RecordingStatus::getInstance().toast("playback.record.toast.instantEmpty"_tr(), ToastKind::Warning);
+        return;
+    }
+    job->sources.assign(newestFirst.rbegin(), newestFirst.rend());
+    job->meta       = mMetadata;
+    job->stagingDir = utils::PathUtils::getSharedTempDir() / (uuidReplayName() + "-instant-staging");
+
+    bool const queued = mAsyncReplaySaver->stageSnapshot(
+        job->stagingDir,
+        std::move(staged),
+        [job](bool ok, std::string const& error) {
+            using namespace ll::i18n_literals;
+            if (!ok) {
+                getLogger().error("Unable to prepare the instant replay: {}", error);
+                RecordingStatus::getInstance()
+                    .toast("playback.record.toast.instantFailed"_tr(error), ToastKind::Error, std::chrono::seconds(10));
+                return;
+            }
+            std::thread([job] { runInstantExport(job); }).detach();
+        }
+    );
+    if (!queued) {
+        RecordingStatus::getInstance().toast("playback.record.toast.instantFailed"_tr("saver"), ToastKind::Error);
+    }
+}
+
 void Recorder::failRecording(std::string_view reason) { cancelRecording(reason); }
 
-void Recorder::cancelRecording(std::string_view reason) {
+void Recorder::cancelRecording(std::string_view reason, bool quiet) {
     using namespace ll::i18n_literals;
-    getLogger().error("Recording cancelled: {}", reason);
+    if (!quiet) {
+        getLogger().error("Recording cancelled: {}", reason);
+        RecordingStatus::getInstance().toast("playback.record.toast.cancelled"_tr(std::string(reason)), ToastKind::Error, std::chrono::seconds(10));
+    }
     RecordingStatus::getInstance().setPhase(RecordingPhase::Idle);
-    RecordingStatus::getInstance().toast("playback.record.toast.cancelled"_tr(std::string(reason)), ToastKind::Error, std::chrono::seconds(10));
+    mBufferMode         = false;
+    mInstantSavePending = false;
+    mEpochChunks.clear();
+    mFinishedEpochs.clear(); // exports still reading an epoch keep it alive until they are done
     if (mAsyncReplaySaver) {
         mAsyncReplaySaver->cancel();
         mAsyncReplaySaver.reset();
