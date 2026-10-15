@@ -1,7 +1,7 @@
 # Live stream (fork extension)
 
 This fork can mirror a recording, while it is being recorded, to a local converter
-([playback2flashback](../../playback2flashback)) that turns it into a Java Edition
+([FlashBridge](https://github.com/liNoyn/FlashBridge)) that turns it into a Java Edition
 [Flashback](https://github.com/Moulberry/Flashback) replay. When recording stops, the converted
 replay is already finished and appears in Flashback's replay list.
 
@@ -19,17 +19,17 @@ the exported replay file.
 |---|---|---|
 | `enabled` | `true` | stream recordings when a converter is reachable |
 | `host` / `port` | `127.0.0.1` / `29525` | converter address (loopback only is recommended) |
-| `launchCommand` | `""` | command line started (hidden) when no converter is listening at record start, e.g. `"C:\...\playback2flashback\bin\playback2flashback.bat" live` |
+| `launchCommand` | `""` | command line started (hidden) when no converter is listening at record start, e.g. `"C:\...\flashbridge\bin\flashbridge.bat" live` |
 | `maxQueuedMegabytes` | `256` | stream is dropped when this much data is waiting to be sent |
 
-`playback2flashback setup-live` writes this file with a `launchCommand` for the installed converter; which Flashback
-instance(s) receive the replays is chosen there (`~/.playback2flashback/config.json`), not here.
+`flashbridge setup-live` writes this file with a `launchCommand` for the installed converter; which Flashback
+instance(s) receive the replays is chosen there (`~/.flashbridge/config.json`), not here.
 
 ## Installing
 
 Releases contain `playback.dll`, `manifest.json` and `install-live.ps1`. The script replaces those two files in
 every LeviLauncher game version that has Playback (recordings and settings in `mods\playback\data` stay), after
-saving the originals to `%USERPROFILE%\.playback2flashback\backup`; `install-live.ps1 -Restore` puts them back.
+saving the originals to `%USERPROFILE%\.flashbridge\backup`; `install-live.ps1 -Restore` puts them back.
 Close Minecraft first.
 
 ## Building this fork

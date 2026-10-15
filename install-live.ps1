@@ -1,6 +1,6 @@
 # Installs the live-stream build of Playback into every LeviLauncher game version that has Playback.
 # Only playback.dll and manifest.json are replaced (recordings and settings in mods\playback\data are kept);
-# the originals are saved once to %USERPROFILE%\.playback2flashback\backup\ so they can be put back.
+# the originals are saved once to %USERPROFILE%\.flashbridge\backup\ so they can be put back.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File install-live.ps1 [-Restore]
 param(
@@ -20,7 +20,11 @@ if (Test-Path $versions) {
 }
 if (-not $mods) { throw "No Playback installation found under $versions (install Playback with LeviLauncher first)." }
 
-$backupRoot = Join-Path $env:USERPROFILE '.playback2flashback\backup'
+$backupRoot = Join-Path $env:USERPROFILE '.flashbridge\backup'
+# Backups made before FlashBridge installed (it was called playback2flashback then) are moved over by its installer;
+# until that happened they are still here.
+$legacyBackupRoot = Join-Path $env:USERPROFILE '.playback2flashback\backup'
+if (-not (Test-Path $backupRoot) -and (Test-Path $legacyBackupRoot)) { $backupRoot = $legacyBackupRoot }
 foreach ($mod in $mods) {
     $installed = Get-Content (Join-Path $mod 'manifest.json') -Raw | ConvertFrom-Json
     $gameVersion = Split-Path (Split-Path (Split-Path $mod)) -Leaf
@@ -59,6 +63,6 @@ foreach ($mod in $mods) {
 
 if (-not $Restore) {
     Write-Host ''
-    Write-Host 'Next: install playback2flashback (its install.ps1) so recordings are converted while you record.'
+    Write-Host 'Next: install FlashBridge (its install.ps1) so recordings are converted while you record.'
     Write-Host 'To go back to the original Playback:  install-live.ps1 -Restore'
 }
