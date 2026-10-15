@@ -56,3 +56,6 @@ third_party/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Fork build output
+*.err
