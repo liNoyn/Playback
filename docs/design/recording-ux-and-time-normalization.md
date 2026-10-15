@@ -406,7 +406,6 @@ tools/                          ← `normalize` コマンド（Playback 形式 �
 | Java パッケージ | `dev.flashbridge` |
 | 環境変数／システムプロパティ | `FLASHBRIDGE_HOME`／`flashbridge.*`（`trimTicks`・`idleSeconds`・`helloSeconds`・`maxQueuedMb`） |
 | ロガー名 | `flashbridge.*` |
-| ローカルの作業フォルダ・計画書 | `Documents\Claude\FlashBridge`・`flashbridge-plan.md` |
 
 ### 12.2 新機能での名前の使い方
 - FlashBridge 側の設定・コマンド・ログ・環境変数・システムプロパティは **`flashbridge` で始める**。
