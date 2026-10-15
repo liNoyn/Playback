@@ -176,53 +176,63 @@ uintptr_t connectOrLaunch(LiveStreamConfig const& config, std::function<bool()> 
     return INVALID_SOCKET;
 }
 
-} // namespace
-
-LiveStreamConfig LiveStreamConfig::load(std::filesystem::path const& file) {
-    LiveStreamConfig config;
-    std::error_code  ec;
-    if (!std::filesystem::exists(file, ec)) {
-        nlohmann::ordered_json defaults{
-            {"enabled",            config.enabled           },
-            {"host",               config.host              },
-            {"port",               config.port              },
-            {"launchCommand",      config.launchCommand     },
-            {"maxQueuedMegabytes", config.maxQueuedMegabytes}
-        };
-        std::filesystem::create_directories(file.parent_path(), ec);
-        std::ofstream out(file, std::ios::binary | std::ios::trunc);
-        out << defaults.dump(4);
-        return config;
+bool receiveAll(uintptr_t socket, char* data, size_t size) {
+    while (size > 0) {
+        int received = ::recv(static_cast<SOCKET>(socket), data, static_cast<int>(std::min<size_t>(size, 1 << 20)), 0);
+        if (received <= 0) return false;
+        data += received;
+        size -= static_cast<size_t>(received);
     }
-
-    try {
-        std::ifstream in(file, std::ios::binary);
-        auto          json        = nlohmann::json::parse(in);
-        config.enabled            = json.value("enabled", config.enabled);
-        config.host               = json.value("host", config.host);
-        config.port               = json.value("port", config.port);
-        config.launchCommand      = json.value("launchCommand", config.launchCommand);
-        config.maxQueuedMegabytes = json.value("maxQueuedMegabytes", config.maxQueuedMegabytes);
-    } catch (std::exception const& exception) {
-        getLogger().warn("Live stream: ignoring invalid {}: {}", file.string(), exception.what());
-        return LiveStreamConfig{};
-    }
-    return config;
+    return true;
 }
 
-std::shared_ptr<LiveStream> LiveStream::start(LiveStreamConfig config, std::string helloJson) {
+// Reads STATUS frames until the converter closes the connection (it does once the recording is done).
+void receiveStatus(uintptr_t socket, LiveStatusCallback const& onStatus) {
+    constexpr uint32_t MaxStatusFrame = 1 << 20;
+    while (true) {
+        unsigned char head[5]{};
+        if (!receiveAll(socket, reinterpret_cast<char*>(head), sizeof(head))) return;
+        uint32_t const length = (uint32_t{head[1]} << 24) | (uint32_t{head[2]} << 16) | (uint32_t{head[3]} << 8) | head[4];
+        if (length > MaxStatusFrame) return;
+        std::string payload(length, '\0');
+        if (length > 0 && !receiveAll(socket, payload.data(), length)) return;
+        if (head[0] == static_cast<unsigned char>(LiveStream::FrameType::Status) && onStatus) {
+            try {
+                onStatus(payload);
+            } catch (std::exception const& exception) {
+                getLogger().warn("Live stream: could not handle a converter report: {}", exception.what());
+            }
+        }
+    }
+}
+
+} // namespace
+
+std::shared_ptr<LiveStream> LiveStream::start(LiveStreamConfig config, std::string helloJson, LiveStatusCallback onStatus) {
     if (!config.enabled) return nullptr;
-    auto stream = std::make_shared<LiveStream>(Private{}, std::move(config), std::move(helloJson));
+    auto stream = std::make_shared<LiveStream>(Private{}, std::move(config), std::move(helloJson), std::move(onStatus));
     stream->enqueue(FrameType::Hello, stream->mHelloJson);
     // The thread keeps the stream alive until everything is sent, even after the recorder lets go of it.
     std::thread([self = stream] { self->run(); }).detach();
     return stream;
 }
 
-LiveStream::LiveStream(Private, LiveStreamConfig config, std::string helloJson)
+LiveStream::LiveStream(Private, LiveStreamConfig config, std::string helloJson, LiveStatusCallback onStatus)
 : mConfig(std::move(config)),
   mHelloJson(std::move(helloJson)),
+  mOnStatus(std::move(onStatus)),
   mSocket(INVALID_SOCKET) {}
+
+void LiveStream::convertExportedFile(
+    LiveStreamConfig   config,
+    std::string        helloJson,
+    std::string        finishJson,
+    LiveStatusCallback onStatus
+) {
+    if (!config.enabled) return;
+    std::thread(reportExportedFile, std::move(config), std::move(helloJson), std::move(finishJson), std::move(onStatus))
+        .detach();
+}
 
 LiveStream::~LiveStream() { closeSocket(mSocket); }
 
@@ -255,7 +265,7 @@ void LiveStream::finish(std::string finishJson) {
         auto hello = nlohmann::json::parse(mHelloJson, nullptr, false);
         if (hello.is_discarded()) hello = nlohmann::json::object();
         hello["streamComplete"] = false;
-        std::thread(reportExportedFile, mConfig, hello.dump(), std::move(finishJson)).detach();
+        std::thread(reportExportedFile, mConfig, hello.dump(), std::move(finishJson), mOnStatus).detach();
         return;
     }
     enqueue(FrameType::Finish, finishJson);
@@ -322,6 +332,8 @@ void LiveStream::run() {
         return;
     }
     getLogger().info("Live stream: connected to the converter on {}:{}", mConfig.host, mConfig.port);
+    // Protocol 2 converters report back on the same connection; reading also keeps their sends from blocking.
+    std::thread receiver(receiveStatus, mSocket, mOnStatus);
 
     while (true) {
         std::string data;
@@ -353,6 +365,9 @@ void LiveStream::run() {
         sendAll(mSocket, frame(FrameType::Cancel, R"({"reason":"live stream dropped: converter fell behind"})", {}));
     }
     shutdown(static_cast<SOCKET>(mSocket), SD_SEND);
+    // A broken stream has nothing more to hear; otherwise wait for the converter's result and its close.
+    if (isBroken()) closeSocket(mSocket);
+    receiver.join();
     closeSocket(mSocket);
 
     if (brokenBeforeFinishSent) {
@@ -360,11 +375,16 @@ void LiveStream::run() {
         auto hello = nlohmann::json::parse(mHelloJson, nullptr, false);
         if (hello.is_discarded()) hello = nlohmann::json::object();
         hello["streamComplete"] = false;
-        reportExportedFile(mConfig, hello.dump(), std::move(finishJson));
+        reportExportedFile(mConfig, hello.dump(), std::move(finishJson), mOnStatus);
     }
 }
 
-void LiveStream::reportExportedFile(LiveStreamConfig config, std::string helloJson, std::string finishJson) {
+void LiveStream::reportExportedFile(
+    LiveStreamConfig   config,
+    std::string        helloJson,
+    std::string        finishJson,
+    LiveStatusCallback onStatus
+) {
     // The converter may have crashed or exited; start it again so the exported replay still gets converted.
     auto socket = connectOrLaunch(config, [] { return true; });
     if (socket == INVALID_SOCKET) {
@@ -375,6 +395,7 @@ void LiveStream::reportExportedFile(LiveStreamConfig config, std::string helloJs
              && sendAll(socket, frame(FrameType::Finish, finishJson, {}));
     if (sent) getLogger().info("Live stream: asked the converter to convert the exported replay");
     shutdown(static_cast<SOCKET>(socket), SD_SEND);
+    if (sent) receiveStatus(socket, onStatus);
     closeSocket(socket);
 }
 

@@ -132,4 +132,27 @@ public:
     }
 };
 
+// Timing of the client tick it precedes (fork extension, docs/design/recording-ux-and-time-normalization.md §3.5):
+// version, wall-clock microseconds since the recording started, newest server tick seen in packets (or -1) and
+// where that came from. Replaying ignores it; FlashBridge uses it to play lagging recordings at game speed.
+struct ActionTickInfo : Action {
+    static constexpr int FormatVersion = 1;
+    static constexpr int SourceNone    = 0;
+    static constexpr int SourcePacket  = 1;
+
+    ActionTickInfo() : Action("tick_info") {}
+    void handle(replay::ReplaySession& replaySession, PlaybackBuffer& data) override;
+
+    // Upstream Playback rejects chunks naming actions it does not know, so the action is only listed in chunk
+    // headers while recordings carry it (not in the compatible format).
+    static void               setWritten(bool written);
+    [[nodiscard]] static bool isWritten();
+
+public:
+    [[nodiscard]] static ActionTickInfo& getInstance() {
+        static ActionTickInfo instance;
+        return instance;
+    }
+};
+
 } // namespace playback::action

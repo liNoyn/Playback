@@ -1,10 +1,11 @@
-﻿#include "ClientTickHooks.h"
+#include "ClientTickHooks.h"
 
 #include "playback/Playback.h"
 #include "playback/editor/ReplayUI.h"
 #include "playback/editor/graphics/ReplayMouseHook.h"
 #include "playback/exporting/ExportEcoMode.h"
 #include "playback/record/ChunkMutationBarrier.h"
+#include "playback/record/RecordControl.h"
 #include "playback/record/Recorder.h"
 #include "playback/replay/ReplaySession.h"
 
@@ -131,6 +132,7 @@ LL_TYPE_INSTANCE_HOOK(
                   && !isShowingProgressScreen() && !isShowingWorldProgressScreen();
     }
     editor::tickReplayUI(hudVisible);
+    if (isInitFinished) RecordControl::getInstance().tick(*this);
     replay.tryFinalizeWorldCleanup();
     return result;
 }

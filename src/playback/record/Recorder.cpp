@@ -6,7 +6,13 @@
 #include "playback/io/LiveStream.h"
 #include "playback/packet/PacketLifecycle.h"
 #include "playback/record/ChunkMutationBarrier.h"
+#include "playback/record/RecordingFiles.h"
+#include "playback/record/RecordingStatus.h"
+#include "playback/record/TickClock.h"
+#include "playback/settings/Settings.h"
 #include "playback/utils/PathUtils.h"
+
+#include "ll/api/i18n/I18n.h"
 
 #include "ll/api/service/Bedrock.h"
 #include "ll/api/service/TargetedBedrock.h"
@@ -133,18 +139,25 @@ std::string pathToUtf8(std::filesystem::path const& path) {
     return {reinterpret_cast<char const*>(utf8.data()), utf8.size()};
 }
 
-// Mirrors the new recording to the live converter (fork extension, docs/live-stream.md) when enabled.
-std::shared_ptr<LiveStream> startLiveStream(PlaybackMeta const& metadata) {
-    auto config = LiveStreamConfig::load(Playback::getInstance().getSelf().getDataDir() / "live.json");
-
+// HELLO for the converter (docs/live-stream.md, protocol 2).
+std::string helloJson(PlaybackMeta const& metadata, RecordingOptions const& options, settings::Settings const& config) {
     auto const&            version = Playback::getInstance().getSelf().getManifest().version;
     nlohmann::ordered_json hello{
-        {"protocol",        1                                                },
+        {"protocol",        2                                                },
         {"playbackVersion", version.has_value() ? version->to_string() : "?"},
         {"gameVersion",     metadata.gameVersion                             },
-        {"worldName",       metadata.worldName                               }
+        {"worldName",       metadata.worldName                               },
+        {"outputMode",      settings::toString(options.mode)                 },
+        {"convert",         settings::toString(options.convert)              },
+        {"features",        metadata.features                                },
+        {"timeNormalization",
+         {{"mode", config.timeNormalization.mode},
+          {"lagMarkers", config.timeNormalization.lagMarkers},
+          {"lagThresholdTps", config.timeNormalization.lagThresholdTps},
+          {"maxGapSeconds", config.timeNormalization.maxGapSeconds}}           }
     };
-    return LiveStream::start(std::move(config), hello.dump());
+    if (options.convert == settings::ConvertTiming::AfterStop) hello["streamComplete"] = false;
+    return hello.dump();
 }
 
 struct NetworkPacketFilter {
@@ -444,6 +457,19 @@ nlohmann::ordered_json metaToJson(PlaybackMeta const& meta) {
         {"gameVersion", meta.gameVersion },
         {"chunks",      std::move(chunks)}
     };
+    if (!meta.markers.empty()) {
+        auto markers = nlohmann::ordered_json::array();
+        for (auto const& marker : meta.markers) {
+            markers.push_back({
+                {"tick",  marker.tick },
+                {"name",  marker.name },
+                {"color", marker.color}
+            });
+        }
+        json["markers"] = std::move(markers);
+    }
+    if (!meta.features.empty()) json["features"] = meta.features;
+    if (!meta.tickSource.empty()) json["tickSource"] = meta.tickSource;
 
     return json;
 }
@@ -461,6 +487,21 @@ PlaybackMeta metaFromJson(nlohmann::ordered_json const& json) {
         meta.gameVersion = it->get<std::string>();
     }
 
+    if (auto const it = json.find("markers"); it != json.end() && it->is_array()) {
+        for (auto const& marker : *it) {
+            if (!marker.is_object()) continue;
+            meta.markers.push_back({marker.value("tick", 0), marker.value("name", ""), marker.value("color", 0)});
+        }
+    }
+    if (auto const it = json.find("features"); it != json.end() && it->is_array()) {
+        for (auto const& feature : *it) {
+            if (feature.is_string()) meta.features.push_back(feature.get<std::string>());
+        }
+    }
+    if (auto const it = json.find("tickSource"); it != json.end() && it->is_string()) {
+        meta.tickSource = it->get<std::string>();
+    }
+
     auto const& chunks = json.at("chunks");
     if (!chunks.is_object()) {
         throw std::invalid_argument("Playback metadata chunks must be an object");
@@ -470,6 +511,71 @@ PlaybackMeta metaFromJson(nlohmann::ordered_json const& json) {
         meta.chunks.insert_or_assign(it.key(), chunkMetaFromJson(it.value()));
     }
     return meta;
+}
+
+} // namespace
+
+// What a recording's conversion has to know once FlashBridge reports back, possibly after the next recording began.
+struct RecordingOutcome {
+    std::mutex            mutex;
+    settings::OutputMode  mode{};
+    settings::SourceKeep  keep;
+    std::filesystem::path replayFile;
+    bool                  reported{};
+};
+
+namespace {
+
+// STATUS reports of one recording: shown in the HUD; the final one may retire a "Flashback only" source.
+LiveStatusCallback statusCallback(std::shared_ptr<RecordingOutcome> outcome) {
+    return [outcome = std::move(outcome)](std::string const& statusJson) {
+        using namespace ll::i18n_literals;
+        auto json = nlohmann::json::parse(statusJson, nullptr, false);
+        if (json.is_discarded() || !json.is_object()) return;
+
+        ConverterStatus status;
+        status.state    = json.value("state", "");
+        status.ticks    = json.value("ticks", 0);
+        status.queuedMB = json.value("queuedMB", 0.0);
+        status.version  = json.value("converterVersion", "");
+        status.time     = json.value("time", "");
+        auto const last = json.find("lastResult");
+        if (last == json.end() || !last->is_object()) {
+            RecordingStatus::getInstance().converterUpdate(std::move(status));
+            return;
+        }
+
+        ConverterResult result;
+        result.ok               = last->value("ok", false);
+        result.verified         = last->value("verified", false);
+        result.fromExportedFile = last->value("fromExportedFile", false);
+        result.error            = last->value("error", "");
+        if (auto const outputs = last->find("outputs"); outputs != last->end() && outputs->is_array()) {
+            for (auto const& output : *outputs) {
+                if (output.is_string()) result.outputs.push_back(output.get<std::string>());
+            }
+        }
+        status.lastResult = result;
+        RecordingStatus::getInstance().converterUpdate(std::move(status));
+
+        std::scoped_lock lock(outcome->mutex);
+        if (outcome->reported) return;
+        outcome->reported = true;
+        if (result.ok && result.verified) {
+            auto const name = result.outputs.empty() ? std::string{}
+                                                     : std::filesystem::path(result.outputs.front()).filename().string();
+            RecordingStatus::getInstance().toast("playback.record.toast.flashbackAdded"_tr(name), ToastKind::Success, std::chrono::seconds(8));
+            if (outcome->mode == settings::OutputMode::Flashback && !outcome->replayFile.empty()) {
+                RecordingFiles::retireSource(outcome->replayFile, outcome->keep);
+            }
+        } else {
+            RecordingStatus::getInstance().toast(
+                "playback.record.toast.flashbackFailed"_tr(result.error),
+                ToastKind::Error,
+                std::chrono::seconds(10)
+            );
+        }
+    };
 }
 
 } // namespace
@@ -495,6 +601,12 @@ Recorder::Recorder() : mSnapshotLevelChunks{}, mSnapshotSubChunks{} {
 }
 
 void Recorder::start() {
+    auto const config = settings::SettingsStore::getInstance().get();
+    start({config.output.mode, config.output.convert});
+}
+
+void Recorder::start(RecordingOptions options) {
+    using namespace ll::i18n_literals;
     auto  clientInstance = ll::service::getClientInstance();
     auto* localPlayer    = clientInstance ? clientInstance->getLocalPlayer() : nullptr;
     if (!localPlayer) {
@@ -504,6 +616,8 @@ void Recorder::start() {
 
     if (mState.load() == State::Paused) {
         mState = State::Recording;
+        TickClock::getInstance().setPaused(false);
+        RecordingStatus::getInstance().setPhase(RecordingPhase::Recording);
         return;
     }
 
@@ -516,6 +630,16 @@ void Recorder::start() {
     if (mState.load() != State::Idle) {
         return;
     }
+
+    // Without FlashBridge set up there is nobody to convert; record anyway (§5.7).
+    auto const config = settings::SettingsStore::getInstance().get();
+    if (options.mode != settings::OutputMode::Playback
+        && (!config.liveStream.enabled || config.liveStream.launchCommand.empty())) {
+        options.mode = settings::OutputMode::Playback;
+        RecordingStatus::getInstance().toast("playback.record.toast.noFlashBridge"_tr(), ToastKind::Warning, std::chrono::seconds(8));
+    }
+    mOptions       = options;
+    mWriteTickInfo = !config.recording.compatibleFormat;
 
     resetStateForNewRecording();
     mRecordedLocalPlayerId        = RecordedPlayerUniqueId;
@@ -532,12 +656,48 @@ void Recorder::start() {
     }
 
     mState = State::Recording;
-    getLogger().info("Recording started");
+    RecordingStatus::getInstance().setRecording(mOptions.mode, mOptions.convert, mLiveStream != nullptr);
+    RecordingStatus::getInstance().setPhase(RecordingPhase::Recording);
+    getLogger().info(
+        "Recording started (output {}, convert {}{})",
+        settings::toString(mOptions.mode),
+        settings::toString(mOptions.convert),
+        mWriteTickInfo ? "" : ", compatible format"
+    );
 }
 
 void Recorder::pause() {
     if (mState.load() != State::Recording) return;
     mState = State::Paused;
+    TickClock::getInstance().setPaused(true);
+    RecordingStatus::getInstance().setPhase(RecordingPhase::Paused);
+}
+
+bool Recorder::addMarker(std::string name, int color) {
+    if (!isActive()) return false;
+    mMetadata.markers.push_back({mWrittenTicks, std::move(name), color & 0xFFFFFF});
+    publishProgress();
+    return true;
+}
+
+void Recorder::publishProgress() {
+    RecordingStatus::getInstance().setProgress(
+        mWrittenTicks / 20.0,
+        static_cast<int>(mMetadata.markers.size()),
+        TickClock::getInstance().recentTps()
+    );
+}
+
+// Starts mirroring to FlashBridge as the output options ask: a live stream, or nothing until the recording is
+// exported ("after stop"), or nothing at all ("Playback only").
+void Recorder::startOutput() {
+    auto const config = settings::SettingsStore::getInstance().get();
+    mOutcome          = std::make_shared<RecordingOutcome>();
+    mOutcome->mode    = mOptions.mode;
+    mOutcome->keep    = config.output.sourceKeep;
+    RecordingStatus::getInstance().converterReset();
+    if (mOptions.mode == settings::OutputMode::Playback || mOptions.convert != settings::ConvertTiming::Live) return;
+    mLiveStream = LiveStream::start(config.liveStream, helloJson(mMetadata, mOptions, config), statusCallback(mOutcome));
 }
 
 void Recorder::stop() {
@@ -550,6 +710,8 @@ void Recorder::stop() {
         return;
     }
 
+    RecordingStatus::getInstance().setPhase(RecordingPhase::Saving);
+    TickClock::getInstance().setPaused(false);
     endTick(true);
     if (mState.load() != State::Closing) return;
     if (mNeedsInitialSnapshot.load(std::memory_order_acquire)) {
@@ -561,6 +723,7 @@ void Recorder::stop() {
     }
     logRecordedGamePacketSummary();
     saveRecording();
+    RecordingStatus::getInstance().setPhase(RecordingPhase::Idle);
 }
 
 void Recorder::saveRecording() {
@@ -604,13 +767,35 @@ void Recorder::saveRecording() {
         if (liveStream) liveStream->cancel(R"({"reason":"the replay could not be exported"})");
         return;
     }
+    {
+        using namespace ll::i18n_literals;
+        RecordingStatus::getInstance().toast(
+            "playback.record.toast.saved"_tr(outputPath.filename().string()),
+            ToastKind::Success,
+            std::chrono::seconds(6)
+        );
+    }
+    if (mOptions.mode == settings::OutputMode::Playback) return;
+
+    if (mOutcome) {
+        std::scoped_lock lock(mOutcome->mutex);
+        mOutcome->replayFile = outputPath;
+    }
+    nlohmann::ordered_json finish{
+        {"replayFile", pathToUtf8(outputPath)},
+        {"metadata", nlohmann::ordered_json::parse(mMetadata.toJson(), nullptr, false)}
+    };
+    if (finish["metadata"].is_discarded()) finish["metadata"] = nlohmann::ordered_json::object();
     if (liveStream) {
-        nlohmann::ordered_json finish{
-            {"replayFile", pathToUtf8(outputPath)},
-            {"metadata", nlohmann::ordered_json::parse(mMetadata.toJson(), nullptr, false)}
-        };
-        if (finish["metadata"].is_discarded()) finish["metadata"] = nlohmann::ordered_json::object();
         liveStream->finish(finish.dump());
+    } else if (mOptions.convert == settings::ConvertTiming::AfterStop) {
+        auto const config = settings::SettingsStore::getInstance().get();
+        LiveStream::convertExportedFile(
+            config.liveStream,
+            helloJson(mMetadata, mOptions, config),
+            finish.dump(),
+            statusCallback(mOutcome)
+        );
     }
 }
 
@@ -652,8 +837,20 @@ void Recorder::resetStateForNewRecording() {
         mMetadata.worldName = level->getLevelData().mLevelName;
     }
 
+    mMetadata.markers.clear();
+    mMetadata.features.clear();
+    mMetadata.tickSource.clear();
+    if (mWriteTickInfo) {
+        mMetadata.features.emplace_back("tick_info");
+        mMetadata.tickSource = "packet";
+    }
+    // Chunk headers are written by the saver as soon as it is created.
+    action::ActionTickInfo::setWritten(mWriteTickInfo);
+    TickClock::getInstance().reset();
+
     if (mLiveStream) mLiveStream->cancel(R"({"reason":"a new recording started"})");
-    mLiveStream       = startLiveStream(mMetadata);
+    mLiveStream = nullptr;
+    startOutput();
     mAsyncReplaySaver = std::make_unique<AsyncReplaySaver>(mLiveStream);
     mChunkIndex                    = 0;
     mTicksInCurrentChunk           = 0;
@@ -1457,7 +1654,18 @@ bool Recorder::writeTickBoundary() {
         return false;
     }
 
-    if (!mAsyncReplaySaver->submit([](ReplayWriter& writer) {
+    std::optional<TickClock::Sample> timing;
+    if (mWriteTickInfo) timing = TickClock::getInstance().takeSample();
+    if (!mAsyncReplaySaver->submit([timing](ReplayWriter& writer) {
+            if (timing) {
+                auto& tickInfo = ActionTickInfo::getInstance();
+                writer.startAction(tickInfo);
+                writer.mStream.writeVarInt(ActionTickInfo::FormatVersion, nullptr, nullptr);
+                writer.mStream.writeVarInt64(timing->wallMicros, nullptr, nullptr);
+                writer.mStream.writeVarInt64(timing->serverTick, nullptr, nullptr);
+                writer.mStream.writeVarInt(timing->source, nullptr, nullptr);
+                writer.finishAction(tickInfo);
+            }
             writer.startAndFinishAction(ActionNextTick::getInstance());
         })) {
         auto error = mAsyncReplaySaver->getError();
@@ -1469,6 +1677,7 @@ bool Recorder::writeTickBoundary() {
 
     ++mTicksInCurrentChunk;
     ++mWrittenTicks;
+    if (mWrittenTicks % 10 == 0) publishProgress();
     if (!mThumbnailCaptureRequested && mWrittenTicks >= THUMBNAIL_CAPTURE_TICKS
         && mState.load(std::memory_order_acquire) == State::Recording) {
         auto clientInstance = ll::service::getClientInstance();
@@ -1650,6 +1859,7 @@ bool Recorder::writeLocalPlayerState() {
 }
 
 void Recorder::recordNetworkGamePacket(Packet const& packet) {
+    if (isActive()) TickClock::getInstance().observePacket(packet);
     if (NetworkPacketFilter::shouldFilter(packet.getId())) return;
     recordGamePacket(packet);
 }
@@ -2023,7 +2233,10 @@ bool Recorder::finishCurrentChunk(bool close) {
 void Recorder::failRecording(std::string_view reason) { cancelRecording(reason); }
 
 void Recorder::cancelRecording(std::string_view reason) {
+    using namespace ll::i18n_literals;
     getLogger().error("Recording cancelled: {}", reason);
+    RecordingStatus::getInstance().setPhase(RecordingPhase::Idle);
+    RecordingStatus::getInstance().toast("playback.record.toast.cancelled"_tr(std::string(reason)), ToastKind::Error, std::chrono::seconds(10));
     if (mAsyncReplaySaver) {
         mAsyncReplaySaver->cancel();
         mAsyncReplaySaver.reset();

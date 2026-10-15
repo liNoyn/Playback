@@ -1,5 +1,5 @@
 # Installs the live-stream build of Playback into every LeviLauncher game version that has Playback.
-# Only playback.dll and manifest.json are replaced (recordings and settings in mods\playback\data are kept);
+# Only playback.dll, manifest.json and the language files are replaced (recordings and settings in mods\playback\data are kept);
 # the originals are saved once to %USERPROFILE%\.flashbridge\backup\ so they can be put back.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File install-live.ps1 [-Restore]
@@ -21,10 +21,6 @@ if (Test-Path $versions) {
 if (-not $mods) { throw "No Playback installation found under $versions (install Playback with LeviLauncher first)." }
 
 $backupRoot = Join-Path $env:USERPROFILE '.flashbridge\backup'
-# Backups made before FlashBridge installed (it was called playback2flashback then) are moved over by its installer;
-# until that happened they are still here.
-$legacyBackupRoot = Join-Path $env:USERPROFILE '.playback2flashback\backup'
-if (-not (Test-Path $backupRoot) -and (Test-Path $legacyBackupRoot)) { $backupRoot = $legacyBackupRoot }
 foreach ($mod in $mods) {
     $installed = Get-Content (Join-Path $mod 'manifest.json') -Raw | ConvertFrom-Json
     $gameVersion = Split-Path (Split-Path (Split-Path $mod)) -Leaf
@@ -33,7 +29,7 @@ foreach ($mod in $mods) {
     if ($Restore) {
         $latest = Get-ChildItem $backupRoot -Directory -Filter "$gameVersion-playback-*" | Sort-Object LastWriteTime | Select-Object -Last 1
         if (-not $latest) { Write-Host "No backup for $gameVersion"; continue }
-        Copy-Item (Join-Path $latest.FullName '*') $mod -Force
+        Copy-Item (Join-Path $latest.FullName '*') $mod -Recurse -Force
         Write-Host "Restored $($latest.Name) -> $mod"
         continue
     }
@@ -47,9 +43,9 @@ foreach ($mod in $mods) {
     # Back up the first time only, so reinstalling never overwrites the original with the fork build.
     if ($installed.version -notmatch '-live\.' -and -not (Test-Path $backup)) {
         New-Item -ItemType Directory -Force $backup | Out-Null
-        foreach ($file in 'playback.dll', 'playback.pdb', 'manifest.json') {
+        foreach ($file in 'playback.dll', 'playback.pdb', 'manifest.json', 'lang') {
             $path = Join-Path $mod $file
-            if (Test-Path $path) { Copy-Item $path $backup }
+            if (Test-Path $path) { Copy-Item $path $backup -Recurse }
         }
         Write-Host "Backed up the original to $backup"
     }
@@ -58,6 +54,9 @@ foreach ($mod in $mods) {
     Copy-Item $newManifest (Join-Path $mod 'manifest.json') -Force
     $pdb = Join-Path $PSScriptRoot 'playback.pdb'
     if (Test-Path $pdb) { Copy-Item $pdb (Join-Path $mod 'playback.pdb') -Force }
+    # New strings (and ja_JP) live in the language files.
+    $lang = Join-Path $PSScriptRoot 'lang'
+    if (Test-Path $lang) { Copy-Item (Join-Path $lang '*') (Join-Path $mod 'lang') -Force }
     Write-Host "Installed the live-stream build into $mod"
 }
 

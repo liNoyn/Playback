@@ -10,6 +10,8 @@
 #include "playback/editor/graphics/ReplayUILayout.h"
 #include "playback/editor/input/EditorInput.h"
 #include "playback/editor/ui/ReplayEditor.h"
+#include "playback/editor/ui/recording/RecordingOverlay.h"
+#include "playback/settings/LanguageOverride.h"
 #include "playback/exporting/ExportActivity.h"
 #include "playback/exporting/OfflineRenderClockHooks.h"
 #include "playback/screen/select_replay/SelectReplayScreen.h"
@@ -135,19 +137,33 @@ void loadReplayUIFonts() {
     std::array<wchar_t, MAX_PATH> windowsDirectory{};
     auto const                    windowsDirectoryLength =
         GetWindowsDirectoryW(windowsDirectory.data(), static_cast<UINT>(windowsDirectory.size()));
-    std::filesystem::path textPath;
+    std::filesystem::path fontsDir;
     if (windowsDirectoryLength > 0 && windowsDirectoryLength < static_cast<UINT>(windowsDirectory.size())) {
-        textPath = std::filesystem::path(windowsDirectory.data()) / "Fonts" / "msyh.ttc";
+        fontsDir = std::filesystem::path(windowsDirectory.data()) / "Fonts";
     }
-    auto const textPathString = textPath.string();
 
-    ImFont* font = textPathString.empty() ? nullptr
-                                          : io.Fonts->AddFontFromFileTTF(
-                                                textPathString.c_str(),
-                                                ui::kBaseFontSize,
-                                                nullptr,
-                                                io.Fonts->GetGlyphRangesChineseSimplifiedCommon()
-                                            );
+    // Japanese reads best in a Japanese face (kanji shapes differ from Chinese ones); YaHei is merged behind it
+    // for anything the first font lacks. ImGui 1.92 loads glyphs on demand, so no ranges are needed.
+    auto existing = [&fontsDir](std::initializer_list<char const*> names) -> std::optional<std::filesystem::path> {
+        for (auto const* name : names) {
+            std::error_code ec;
+            if (!fontsDir.empty() && std::filesystem::exists(fontsDir / name, ec)) return fontsDir / name;
+        }
+        return std::nullopt;
+    };
+    std::vector<std::filesystem::path> faces;
+    if (settings::effectiveLanguage().starts_with("ja")) {
+        if (auto face = existing({"YuGothM.ttc", "meiryo.ttc", "msgothic.ttc"})) faces.push_back(*face);
+    }
+    if (auto face = existing({"msyh.ttc"})) faces.push_back(*face);
+
+    ImFont* font = nullptr;
+    for (auto const& face : faces) {
+        ImFontConfig faceConfig;
+        faceConfig.MergeMode = font != nullptr;
+        auto* added          = io.Fonts->AddFontFromFileTTF(face.string().c_str(), ui::kBaseFontSize, &faceConfig);
+        if (!font) font = added;
+    }
     if (font) io.FontDefault = font;
     else io.Fonts->AddFontDefault();
 
@@ -304,6 +320,9 @@ struct ImGuiRenderer::Impl {
     ImGuiContext*                    d3d11ImguiCtx{};
     bool                             d3d11BackendInit{};
     bool                             d3d11Initialized{};
+    // This frame draws the recording panel (input like the browser) or only the draw-only recording HUD.
+    bool panelOpen{};
+    bool overlayOnly{};
     bool                             d3d11FirstFrameLogged{};
     struct D3D11ThumbnailTexture {
         ComPtr<ID3D11Texture2D>          texture;
@@ -751,7 +770,7 @@ struct ImGuiRenderer::Impl {
             (void)d3d11FrameTap.capture(d3d11Device.Get(), d3d11Context.Get(), source.Get());
         }
         // The export preview reuses this copy: at Present the back buffer already holds the clean world frame.
-        if (!exporting::isExportActive(state.exportStatus.state) || captureFrame) {
+        if ((!exporting::isExportActive(state.exportStatus.state) && !overlayOnly) || captureFrame) {
             d3d11Context->CopyResource(d3d11GameTexture.Get(), source.Get());
         }
 
@@ -773,9 +792,13 @@ struct ImGuiRenderer::Impl {
         lastFrameTime = frameNow;
 
         ImGui_ImplDX11_NewFrame();
-        input::syncFrame();
-        bool const blockGameInput = state.browser.visible || exporting::isExportActive(state.exportStatus.state);
-        beginReplayMouseFrame(io.DisplaySize.x, io.DisplaySize.y, blockGameInput);
+        // The recording HUD takes no input, so it must not touch the mouse and key routing.
+        if (!overlayOnly) {
+            input::syncFrame();
+            bool const blockGameInput =
+                state.browser.visible || panelOpen || exporting::isExportActive(state.exportStatus.state);
+            beginReplayMouseFrame(io.DisplaySize.x, io.DisplaySize.y, blockGameInput);
+        }
         ImGui::NewFrame();
         beginThumbnailFrame();
         auto submit = [this](EditorAction action) {
@@ -783,7 +806,10 @@ struct ImGuiRenderer::Impl {
         };
         auto& replayBrowser = playback::screen::select_replay::SelectReplayScreen::getInstance();
         auto& replayEditor  = ui::ReplayEditor::getInstance();
-        if (state.browser.visible) {
+        if (overlayOnly || panelOpen) {
+            if (panelOpen) ui::recording::drawPanel();
+            if (ui::recording::hudWanted()) ui::recording::drawHud();
+        } else if (state.browser.visible) {
             replayBrowser.draw(state.browser, submit);
         } else if (state.editorVisible || exportFrame) {
             replayEditor.setGameTexture(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(d3d11GameSrv.Get())));
@@ -798,7 +824,7 @@ struct ImGuiRenderer::Impl {
                 setReplayGameViewportExclusion(overlay.min.x, overlay.min.y, overlay.max.x, overlay.max.y);
             }
         }
-        endReplayMouseFrame(getSwapChainWindow(sc));
+        if (!overlayOnly) endReplayMouseFrame(getSwapChainWindow(sc));
         ImGui::Render();
         thumbnailLoader.endFrame();
 
@@ -822,7 +848,8 @@ struct ImGuiRenderer::Impl {
             d3d11Context->ClearRenderTargetView(rtv, OpaqueBlack);
         } else {
             d3d11Context->OMSetRenderTargets(1, &rtv, nullptr);
-            if (!state.browser.visible && !exporting::isExportActive(state.exportStatus.state)) {
+            if (!state.browser.visible && !overlayOnly && !panelOpen
+                && !exporting::isExportActive(state.exportStatus.state)) {
                 float clearColor[]{0.055f, 0.055f, 0.065f, 1};
                 d3d11Context->ClearRenderTargetView(rtv, clearColor);
             }
@@ -1456,7 +1483,12 @@ bool ImGuiRenderer::renderInternal(
     bool const browserOpen   = allowUi && state.browser.visible;
     bool const exportOverlay = allowUi && exporting::isExportActive(state.exportStatus.state);
     bool const editorOpen    = allowUi && state.editorVisible;
-    bool const uiActive      = browserOpen || editorOpen || (forceExportOverlay && exportOverlay);
+    // Recording overlay (only while playing, never over the replay screens).
+    bool const panelOpen     = allowUi && !browserOpen && !editorOpen && !exportOverlay && ui::recording::panelWanted();
+    bool const uiActive      = browserOpen || editorOpen || panelOpen || (forceExportOverlay && exportOverlay);
+    bool const overlayOnly   = allowUi && !uiActive && !exportOverlay && ui::recording::hudWanted();
+    p.panelOpen              = panelOpen;
+    p.overlayOnly            = overlayOnly;
     if (allowUi) input::setUiVisible(uiActive);
     if (!forceExportOverlay || !exportOverlay) p.resetExportSurface();
 
@@ -1473,7 +1505,7 @@ bool ImGuiRenderer::renderInternal(
     // Capturing before the native render returns yields a sky-only frame.
     bool const sceneReady = !exporting::isOfflineRenderActivityActive() || exporting::isOfflineRenderSceneSubmitted();
     bool const captureActive = allowFrameCapture && sceneReady && p.frameTap.hasArmedCapture();
-    if (!uiActive && !captureActive && !forceExportOverlay) {
+    if (!uiActive && !overlayOnly && !captureActive && !forceExportOverlay) {
         if (allowUi) {
             setReplayMouseInputActive(false);
             // A submitted one-shot capture needs no render pass, but the backend must outlive its collection.
@@ -1491,7 +1523,7 @@ bool ImGuiRenderer::renderInternal(
     if (allowUi && p.initialized && swapChain == p.swapChain) p.lastPresent = now;
     if (!uiActive) {
         setReplayMouseInputActive(false);
-        if (!captureActive && !forceExportOverlay) return false;
+        if (!overlayOnly && !captureActive && !forceExportOverlay) return false;
     }
 
     ComPtr<ID3D11Device> d3d11Device;
@@ -1503,7 +1535,7 @@ bool ImGuiRenderer::renderInternal(
                 return false;
             }
             inputAttempt.commit();
-        } else if (!p.renderD3D11(swapChain, false, captureActive, state, false)) {
+        } else if (!p.renderD3D11(swapChain, overlayOnly, captureActive, state, false)) {
             return false;
         }
         return true;
@@ -1559,12 +1591,12 @@ bool ImGuiRenderer::renderInternal(
     auto const bd = f.backBuffer->GetDesc();
     if (bd.Width == 0 || bd.Height == 0) return false;
     // The export preview reuses the editor viewport copy, since Present already holds the clean world frame.
-    bool const copyGameTexture = !exportOverlay || captureActive;
+    bool const copyGameTexture = (!exportOverlay && !overlayOnly && !panelOpen) || captureActive;
 
     // Export UI goes to its own window-sized layer, so the export resolution cannot blur it.
     bool const exportUi         = uiActive && forceExportOverlay && exportOverlay;
     bool const surfaceUi        = exportUi && p.ensureExportSurface(swapChain, false, p.rtvFormat);
-    bool const drawUi           = exportUi ? surfaceUi : uiActive;
+    bool const drawUi           = exportUi ? surfaceUi : (uiActive || overlayOnly);
     bool const drawOnBackBuffer = drawUi && !surfaceUi;
 
     ImGuiContextRestore cr;
@@ -1582,10 +1614,13 @@ bool ImGuiRenderer::renderInternal(
         p.lastFrameTime = fn;
 
         ImGui_ImplDX12_NewFrame();
-        // Forward MCBE key events to ImGui keyboard state
-        input::syncFrame();
-        bool const blockGameInput = state.browser.visible || exporting::isExportActive(state.exportStatus.state);
-        beginReplayMouseFrame(io.DisplaySize.x, io.DisplaySize.y, blockGameInput);
+        if (!overlayOnly) {
+            // Forward MCBE key events to ImGui keyboard state
+            input::syncFrame();
+            bool const blockGameInput =
+                state.browser.visible || panelOpen || exporting::isExportActive(state.exportStatus.state);
+            beginReplayMouseFrame(io.DisplaySize.x, io.DisplaySize.y, blockGameInput);
+        }
         ImGui::NewFrame();
         p.beginThumbnailFrame();
         auto submit = [&p](EditorAction action) {
@@ -1593,7 +1628,10 @@ bool ImGuiRenderer::renderInternal(
         };
         auto& replayBrowser = playback::screen::select_replay::SelectReplayScreen::getInstance();
         auto& replayEditor  = ui::ReplayEditor::getInstance();
-        if (state.browser.visible) {
+        if (overlayOnly || panelOpen) {
+            if (panelOpen) ui::recording::drawPanel();
+            if (ui::recording::hudWanted()) ui::recording::drawHud();
+        } else if (state.browser.visible) {
             replayBrowser.draw(state.browser, submit);
         } else if (state.editorVisible || exportOverlay) {
             // During export only captured frames refresh the copy, so show the latest one instead of this slot.
@@ -1612,7 +1650,7 @@ bool ImGuiRenderer::renderInternal(
                 setReplayGameViewportExclusion(overlay.min.x, overlay.min.y, overlay.max.x, overlay.max.y);
             }
         }
-        endReplayMouseFrame(getSwapChainWindow(swapChain));
+        if (!overlayOnly) endReplayMouseFrame(getSwapChainWindow(swapChain));
         ImGui::Render();
         p.thumbnailLoader.endFrame();
         if (p.renderingDisabled) return false;
@@ -1708,7 +1746,7 @@ bool ImGuiRenderer::renderInternal(
             f.commandList->ResourceBarrier(1, &surfaceBarrier);
         } else {
             f.commandList->OMSetRenderTargets(1, &f.rtv, FALSE, nullptr);
-            if (!browserOpen && !exportOverlay) {
+            if (!browserOpen && !exportOverlay && !panelOpen && !overlayOnly) {
                 float cc[]{0.055f, 0.055f, 0.065f, 1};
                 f.commandList->ClearRenderTargetView(f.rtv, cc, 0, nullptr);
             }
@@ -1760,7 +1798,7 @@ bool ImGuiRenderer::renderInternal(
     }
     if (frameTapSubmitted) p.d3d12FrameTap.submitted(p.fence.Get(), fv);
     if (surfaceUi) p.presentExportSurface();
-    if (drawUi) ia.commit();
+    if (drawUi && !overlayOnly) ia.commit();
     return true;
 }
 

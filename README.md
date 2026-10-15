@@ -1,10 +1,13 @@
-> **Live-stream fork.** This is [wo55555/Playback](https://github.com/wo55555/Playback) plus one extension:
-> while you record, the recording is mirrored to a local converter that turns it into a Java Edition
-> [Flashback](https://github.com/Moulberry/Flashback) replay, finished the moment you stop
-> ([FlashBridge](https://github.com/liNoyn/FlashBridge)). Everything else is unchanged and
-> the extension is off unless the converter is installed. Install with `install-live.ps1` from the Releases page;
-> protocol and build notes are in [docs/live-stream.md](docs/live-stream.md). Not affiliated with the upstream author.
-> 日本語: [README.ja.md](README.ja.md)
+> **Live-stream fork.** This is [wo55555/Playback](https://github.com/wo55555/Playback) plus recording extensions:
+> the recording is mirrored to a local converter ([FlashBridge](https://github.com/liNoyn/FlashBridge)) that turns it
+> into a Java Edition [Flashback](https://github.com/Moulberry/Flashback) replay, finished the moment you stop;
+> hotkeys (F8 record / Shift+F8 pause / F7 marker / F6 panel), an on-screen recording indicator, a control panel,
+> output modes (Playback only / both / Flashback only), lag-corrected replays (`tick_info`), markers, crash recovery
+> and a low-disk guard, all configured in `mods/playback/data/settings.json`. Replaying and editing are unchanged.
+> Install with `install-live.ps1` from the Releases page; protocol and build notes are in
+> [docs/live-stream.md](docs/live-stream.md), the design in
+> [docs/design/recording-ux-and-time-normalization.md](docs/design/recording-ux-and-time-normalization.md).
+> Not affiliated with the upstream author. 日本語: [README.ja.md](README.ja.md)
 
 <div align="center">
   <img src="assets/pack_icon.png" alt="Playback icon" width="160">

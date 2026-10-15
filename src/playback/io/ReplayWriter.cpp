@@ -19,9 +19,11 @@ void ReplayWriter::writeHeader() {
 
     mActionNameToId.clear();
     names.reserve(actions.size());
-    for (int32_t i = 0; i < static_cast<int32_t>(actions.size()); ++i) {
-        mActionNameToId[actions[i]->name] = i;
-        names.push_back(actions[i]->name);
+    bool const tickInfo = action::ActionTickInfo::isWritten();
+    for (auto const& action : actions) {
+        if (!tickInfo && action->name == action::ActionTickInfo::getInstance().name) continue;
+        mActionNameToId[action->name] = static_cast<int32_t>(names.size());
+        names.push_back(action->name);
     }
     mStream.writeVarInt(static_cast<int32_t>(names.size()), nullptr, nullptr);
     for (auto name : names) {

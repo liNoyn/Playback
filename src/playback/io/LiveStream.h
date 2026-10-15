@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -11,17 +12,18 @@
 
 namespace playback::io {
 
-// Settings for mirroring recordings to a live converter (docs/live-stream.md), stored in <data dir>/live.json.
+// Settings for mirroring recordings to a live converter (docs/live-stream.md): the liveStream section of
+// settings.json (FlashBridge's setup-live fills in launchCommand).
 struct LiveStreamConfig {
     bool        enabled            = true;
     std::string host               = "127.0.0.1";
     int         port               = 29525;
     std::string launchCommand;
     int         maxQueuedMegabytes = 256;
-
-    // Reads the file, writing the defaults to it when it does not exist yet. Invalid files fall back to defaults.
-    [[nodiscard]] static LiveStreamConfig load(std::filesystem::path const& file);
 };
+
+// Receives the converter's STATUS frames (protocol 2, JSON) on a network thread.
+using LiveStatusCallback = std::function<void(std::string const& statusJson)>;
 
 // Mirrors one recording to the live converter over loopback TCP.
 //
@@ -31,10 +33,24 @@ struct LiveStreamConfig {
 // finish() a fresh connection then tells the converter to convert the exported replay file instead.
 class LiveStream : public std::enable_shared_from_this<LiveStream> {
 public:
-    enum class FrameType : uint8_t { Hello = 1, ChunkData = 2, CacheEntry = 3, ChunkEnd = 4, Finish = 5, Cancel = 6 };
+    enum class FrameType : uint8_t {
+        Hello      = 1,
+        ChunkData  = 2,
+        CacheEntry = 3,
+        ChunkEnd   = 4,
+        Finish     = 5,
+        Cancel     = 6,
+        Status     = 7, // converter -> Playback (protocol 2)
+    };
 
-    // Returns nullptr when streaming is disabled in the config.
-    [[nodiscard]] static std::shared_ptr<LiveStream> start(LiveStreamConfig config, std::string helloJson);
+    // Returns nullptr when streaming is disabled in the config. onStatus gets every STATUS report of this
+    // recording, including the final one (lastResult) that may arrive long after finish().
+    [[nodiscard]] static std::shared_ptr<LiveStream>
+    start(LiveStreamConfig config, std::string helloJson, LiveStatusCallback onStatus);
+
+    // Converts an exported replay without a stream ("convert after stop"): HELLO + FINISH on a background thread.
+    static void
+    convertExportedFile(LiveStreamConfig config, std::string helloJson, std::string finishJson, LiveStatusCallback onStatus);
 
     LiveStream(LiveStream const&)            = delete;
     LiveStream& operator=(LiveStream const&) = delete;
@@ -60,7 +76,7 @@ private:
     struct Private {};
 
 public:
-    LiveStream(Private, LiveStreamConfig config, std::string helloJson);
+    LiveStream(Private, LiveStreamConfig config, std::string helloJson, LiveStatusCallback onStatus);
 
 private:
     void enqueue(FrameType type, std::string_view head, std::string_view body = {});
@@ -68,10 +84,16 @@ private:
     void markBroken(std::string_view reason);
     [[nodiscard]] bool connectToConverter();
 
-    static void reportExportedFile(LiveStreamConfig config, std::string helloJson, std::string finishJson);
+    static void reportExportedFile(
+        LiveStreamConfig   config,
+        std::string        helloJson,
+        std::string        finishJson,
+        LiveStatusCallback onStatus
+    );
 
-    LiveStreamConfig mConfig;
-    std::string      mHelloJson;
+    LiveStreamConfig   mConfig;
+    std::string        mHelloJson;
+    LiveStatusCallback mOnStatus;
 
     mutable std::mutex      mMutex;
     std::condition_variable mCondition;

@@ -1,7 +1,8 @@
-﻿#pragma once
+#pragma once
 
 #include "playback/io/AsyncReplaySaver.h"
 #include "playback/packet/PlaybackSetEquipmentPacket.h"
+#include "playback/settings/Settings.h"
 #include "playback/utils/container/LinkedHashMap.h"
 #include "playback/visuals/ReplayThumbnail.h"
 
@@ -56,12 +57,23 @@ struct PlaybackChunkMeta {
     bool forcePlaySnapshot = false;
 };
 
+// A bookmark placed while recording; tick counts recorded ticks from the start of the recording.
+struct PlaybackMarker {
+    int         tick{};
+    std::string name;
+    int         color{};
+};
+
 struct PlaybackMeta {
     std::string name = "Unnamed";
     std::string worldName;
     int         totalTicks = 0;
     // Packet layouts differ per game version; empty means the file predates this field.
     std::string gameVersion;
+    // Fork extensions (docs/design/recording-ux-and-time-normalization.md); upstream ignores unknown keys.
+    std::vector<PlaybackMarker> markers;
+    std::vector<std::string>    features;   // "tick_info" when the chunks carry tick_info actions
+    std::string                 tickSource; // where tick_info server ticks come from ("packet")
 
     utils::container::LinkedHashMap<std::string, PlaybackChunkMeta> chunks;
 
@@ -76,6 +88,15 @@ struct PlaybackMeta {
 // packet fields referencing the real local player's ActorUniqueID can be remapped consistently.
 inline constexpr ActorUniqueID RecordedPlayerUniqueId{std::numeric_limits<int64_t>::max() - 1024};
 
+// Chosen when a recording starts and fixed until it ends (§5.7 of the design document).
+struct RecordingOptions {
+    settings::OutputMode    mode    = settings::OutputMode::Both;
+    settings::ConvertTiming convert = settings::ConvertTiming::Live;
+};
+
+// Shared with the converter callbacks, which may report long after the recording ended.
+struct RecordingOutcome;
+
 class Recorder {
 private:
     enum class State { Idle, Recording, Paused, Closing };
@@ -88,7 +109,10 @@ private:
     };
     std::unique_ptr<AsyncReplaySaver> mAsyncReplaySaver;
     // Mirror of the current recording for the live converter (fork extension), null when not streaming.
-    std::shared_ptr<io::LiveStream> mLiveStream;
+    std::shared_ptr<io::LiveStream>   mLiveStream;
+    RecordingOptions                  mOptions;
+    std::shared_ptr<RecordingOutcome> mOutcome;
+    bool                              mWriteTickInfo = true;
 
     std::vector<std::shared_ptr<LevelChunkPacket>>            mSnapshotLevelChunks;
     std::vector<std::shared_ptr<SubChunkPacket>>              mSnapshotSubChunks;
@@ -174,6 +198,10 @@ private:
 
     void resetChunkSnapshot();
 
+    void startOutput();
+
+    void publishProgress();
+
     void recordConfigurationPacket(Packet const& packet, PacketLifecycleSemantics const& semantics);
 
 public:
@@ -186,9 +214,18 @@ public:
 
     [[nodiscard]] bool isPaused() const { return mState.load() == State::Paused; }
 
+    // Starts with the output settings from settings.json.
     void start();
+    void start(RecordingOptions options);
     void pause();
     void stop();
+
+    // Places a marker at the current tick; false when nothing is being recorded.
+    bool addMarker(std::string name, int color);
+
+    [[nodiscard]] RecordingOptions options() const { return mOptions; }
+    [[nodiscard]] int              recordedTicks() const { return mWrittenTicks; }
+    [[nodiscard]] int              markerCount() const { return static_cast<int>(mMetadata.markers.size()); }
 
     void setThumbnailCaptureProvider(visuals::ReplayThumbnailCaptureProvider* provider) {
         mThumbnailCaptureProvider.store(provider, std::memory_order_release);

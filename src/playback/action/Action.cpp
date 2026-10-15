@@ -3,6 +3,8 @@
 #include "playback/io/AsyncReplaySaver.h"
 #include "playback/replay/ReplaySession.h"
 
+#include <atomic>
+
 namespace playback::action {
 using playback::io::readSnapshotContext;
 using playback::io::writeSnapshotContext;
@@ -34,5 +36,15 @@ void ActionGamePacket::handle(replay::ReplaySession& session, PlaybackBuffer& da
 void ActionMoveEntities::handle(replay::ReplaySession& session, PlaybackBuffer& data) {
     session.handleMoveEntities(data);
 }
+
+namespace {
+std::atomic_bool gTickInfoWritten{true};
+}
+
+void ActionTickInfo::handle(replay::ReplaySession&, PlaybackBuffer&) {}
+
+void ActionTickInfo::setWritten(bool written) { gTickInfoWritten.store(written, std::memory_order_release); }
+
+bool ActionTickInfo::isWritten() { return gTickInfoWritten.load(std::memory_order_acquire); }
 
 } // namespace playback::action

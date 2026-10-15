@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <string>
 
@@ -14,8 +14,7 @@ struct CommandStruct {
 };
 
 struct Config {
-    int         version    = 1;
-    std::string locateName = "zh_CN";
+    int version = 1;
 
     CommandStruct command;
 };

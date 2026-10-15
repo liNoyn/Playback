@@ -1,4 +1,4 @@
-﻿#include "Playback.h"
+#include "Playback.h"
 
 #include "playback/Playback.h"
 #include "playback/action/Action.h"
@@ -10,7 +10,11 @@
 #include "playback/exporting/IdleDetectionHooks.h"
 #include "playback/exporting/OfflineRenderClockHooks.h"
 #include "playback/record/ChunkMutationBarrier.h"
+#include "playback/record/RecordControl.h"
 #include "playback/record/Recorder.h"
+#include "playback/record/RecordingFiles.h"
+#include "playback/settings/Settings.h"
+#include "playback/settings/LanguageOverride.h"
 #include "playback/replay/ReplaySession.h"
 #include "playback/runtime/ClientTickHooks.h"
 #include "playback/runtime/command/Command.h"
@@ -78,6 +82,7 @@ void Playback::registerActions() {
     registry.registerAction(std::make_unique<action::ActionConfigurationPacket>());
     registry.registerAction(std::make_unique<action::ActionGamePacket>());
     registry.registerAction(std::make_unique<action::ActionMoveEntities>());
+    registry.registerAction(std::make_unique<action::ActionTickInfo>());
 }
 
 bool Playback::hook() {
@@ -266,6 +271,19 @@ bool Playback::load() {
     }
 
     registerActions();
+
+    auto& settingsStore = settings::SettingsStore::getInstance();
+    settingsStore.load(getSelf().getDataDir());
+    auto const initialSettings = settingsStore.get();
+    record::RecordControl::getInstance().applySettings(initialSettings);
+    settings::applyLanguage(getSelf().getLangDir(), initialSettings.language);
+    settingsStore.setListener([](settings::Settings const& changed) {
+        record::RecordControl::getInstance().applySettings(changed);
+    });
+    if (initialSettings.output.sourceKeep.kind == settings::SourceKeep::Kind::Days) {
+        record::RecordingFiles::cleanTrash(initialSettings.output.sourceKeep.days);
+    }
+
     if (!editor::hookReplayUIRendererInit(true)) {
         logger.error("Unable to install the early D3D12 renderer hook; the replay timeline may be unavailable");
     }
@@ -291,6 +309,7 @@ bool Playback::enable() {
     if (!editor::hookReplayUI(true)) {
         logger.error("Replay UI hooks are unavailable; replay support will continue without them");
     }
+    if (!record::hookHotkeys(true)) logger.warn("Recording hotkeys are unavailable; use /record instead");
     return true;
 }
 
@@ -306,6 +325,7 @@ bool Playback::disable() {
 
     exporting::applyExportEcoMode(false);
     record::Recorder::getInstance().stop();
+    (void)record::hookHotkeys(false);
     if (!unhook()) {
         logger.error("Playback cannot disable because its runtime hooks could not be removed safely");
         return false;
