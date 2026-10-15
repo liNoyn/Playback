@@ -1,12 +1,13 @@
 # Playback ライブ配信フォーク
 
+[English](README.md) | [日本語](README.ja.md)
+
 [wo55555/Playback](https://github.com/wo55555/Playback)（Minecraft 統合版のリプレイ MOD）に、**録画中の内容を
 ローカルの変換ツールへ流す機能**と、**録画の操作画面**を足したフォークです。統合版で録画して止めると、Java 版の
 [Flashback](https://github.com/Moulberry/Flashback) 用リプレイがその時点で完成します。変換ツールは
 [FlashBridge](https://github.com/liNoyn/FlashBridge) です。
 
-リプレイの再生・編集は本家のままです。本家の作者とは無関係の非公式フォークです。本家の説明は
-[README.md](README.md) を参照してください。
+リプレイの再生・編集は本家のままです。本家の作者とは無関係の非公式フォークです。
 
 | | |
 |---|---|
