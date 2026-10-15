@@ -81,6 +81,8 @@ private:
     bool                    mBroken      = false;
     // Dropped because the converter fell behind (still connected): it is told to discard the partial stream.
     bool                    mOverflowed  = false;
+    // Set by finish(); lets run() still ask for the exported file if the stream breaks before FINISH is sent.
+    std::string             mFinishJson;
 
     uintptr_t mSocket;
 };

@@ -131,7 +131,8 @@ std::wstring widen(std::string const& utf8) {
     return wide;
 }
 
-// Starts the converter hidden; the command runs through cmd so batch launchers work.
+// Starts the converter hidden and below normal priority so it never competes with the game; the command runs
+// through cmd so batch launchers work.
 bool launchConverter(std::string const& command) {
     std::wstring cmdLine = L"cmd.exe /d /s /c \"" + widen(command) + L"\"";
 
@@ -144,7 +145,7 @@ bool launchConverter(std::string const& command) {
             nullptr,
             nullptr,
             FALSE,
-            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | BELOW_NORMAL_PRIORITY_CLASS,
             nullptr,
             nullptr,
             &startup,
@@ -157,6 +158,22 @@ bool launchConverter(std::string const& command) {
     CloseHandle(process.hProcess);
     getLogger().info("Live stream: launched the converter");
     return true;
+}
+
+// Connects to the converter, starting it first when nothing is listening and a launch command is configured.
+// keepTrying is polled while waiting for a freshly launched converter to open its port.
+uintptr_t connectOrLaunch(LiveStreamConfig const& config, std::function<bool()> const& keepTrying) {
+    auto socket = connectTo(config.host, config.port, CONNECT_TIMEOUT);
+    if (socket != INVALID_SOCKET) return socket;
+    if (config.launchCommand.empty() || !launchConverter(config.launchCommand)) return INVALID_SOCKET;
+
+    auto const deadline = std::chrono::steady_clock::now() + LAUNCH_CONNECT_TIMEOUT;
+    while (std::chrono::steady_clock::now() < deadline && keepTrying()) {
+        std::this_thread::sleep_for(LAUNCH_RETRY_INTERVAL);
+        socket = connectTo(config.host, config.port, CONNECT_TIMEOUT);
+        if (socket != INVALID_SOCKET) return socket;
+    }
+    return INVALID_SOCKET;
 }
 
 } // namespace
@@ -231,6 +248,7 @@ void LiveStream::finish(std::string finishJson) {
     {
         std::scoped_lock lock(mMutex);
         broken = mBroken;
+        if (!broken) mFinishJson = finishJson;
     }
     if (broken) {
         // The converter missed part of the recording; let it convert the exported file instead.
@@ -291,21 +309,11 @@ void LiveStream::markBroken(std::string_view reason) {
 }
 
 bool LiveStream::connectToConverter() {
-    mSocket = connectTo(mConfig.host, mConfig.port, CONNECT_TIMEOUT);
-    if (mSocket != INVALID_SOCKET) return true;
-    if (mConfig.launchCommand.empty() || !launchConverter(mConfig.launchCommand)) return false;
-
-    auto const deadline = std::chrono::steady_clock::now() + LAUNCH_CONNECT_TIMEOUT;
-    while (std::chrono::steady_clock::now() < deadline) {
-        {
-            std::scoped_lock lock(mMutex);
-            if (mBroken) return false;
-        }
-        std::this_thread::sleep_for(LAUNCH_RETRY_INTERVAL);
-        mSocket = connectTo(mConfig.host, mConfig.port, CONNECT_TIMEOUT);
-        if (mSocket != INVALID_SOCKET) return true;
-    }
-    return false;
+    mSocket = connectOrLaunch(mConfig, [this] {
+        std::scoped_lock lock(mMutex);
+        return !mBroken;
+    });
+    return mSocket != INVALID_SOCKET;
 }
 
 void LiveStream::run() {
@@ -331,10 +339,14 @@ void LiveStream::run() {
             break;
         }
     }
-    bool overflowed;
+    bool        overflowed;
+    bool        brokenBeforeFinishSent;
+    std::string finishJson;
     {
         std::scoped_lock lock(mMutex);
-        overflowed = mOverflowed;
+        overflowed             = mOverflowed;
+        finishJson             = mFinishJson;
+        brokenBeforeFinishSent = mBroken && !mFinishJson.empty();
     }
     if (overflowed) {
         // The exported file is reported on a new connection at finish(); this partial stream is useless.
@@ -342,10 +354,19 @@ void LiveStream::run() {
     }
     shutdown(static_cast<SOCKET>(mSocket), SD_SEND);
     closeSocket(mSocket);
+
+    if (brokenBeforeFinishSent) {
+        // finish() had already been called but the converter never got the FINISH frame.
+        auto hello = nlohmann::json::parse(mHelloJson, nullptr, false);
+        if (hello.is_discarded()) hello = nlohmann::json::object();
+        hello["streamComplete"] = false;
+        reportExportedFile(mConfig, hello.dump(), std::move(finishJson));
+    }
 }
 
 void LiveStream::reportExportedFile(LiveStreamConfig config, std::string helloJson, std::string finishJson) {
-    auto socket = connectTo(config.host, config.port, CONNECT_TIMEOUT);
+    // The converter may have crashed or exited; start it again so the exported replay still gets converted.
+    auto socket = connectOrLaunch(config, [] { return true; });
     if (socket == INVALID_SOCKET) {
         getLogger().info("Live stream: converter unavailable; convert the exported replay manually");
         return;
