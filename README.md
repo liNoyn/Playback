@@ -88,7 +88,7 @@ Turn it on in the panel (`F6` → Settings) or with `Shift+F9`. While you play, 
 kept; **`F9` saves it** as a replay named `...-instant.zip` (tagged `instant`), converted according to the output mode.
 
 - It runs **alongside recording**: during a recording `F9` cuts out the recent part without stopping the recording.
-  If you turn it on during a recording, it applies from the next one.
+  Turning it on during a recording takes effect at once (the first save then reaches back to the start of the current chunk).
 - Saving happens in the background. A saved clip can be up to one chunk longer than the set length (a chunk is a third
   of the length or 30 s, whichever is shorter), because chunks start from a full world snapshot.
 - Each chunk takes a world snapshot, a short periodic load. Raise `instantReplay.chunkSeconds` if you notice it.

@@ -1,4 +1,4 @@
-﻿#include "Action.h"
+#include "Action.h"
 
 #include "playback/io/AsyncReplaySaver.h"
 #include "playback/replay/ReplaySession.h"
@@ -41,7 +41,8 @@ namespace {
 std::atomic_bool gTickInfoWritten{true};
 }
 
-void ActionTickInfo::handle(replay::ReplaySession&, PlaybackBuffer&) {}
+// Replaying has no use for the timing, but the reader checks that every action consumed its payload.
+void ActionTickInfo::handle(replay::ReplaySession&, PlaybackBuffer& data) { data.mReadPointer = data.getWritePointer(); }
 
 void ActionTickInfo::setWritten(bool written) { gTickInfoWritten.store(written, std::memory_order_release); }
 

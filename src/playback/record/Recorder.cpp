@@ -902,6 +902,21 @@ void Recorder::configureInstant(settings::Settings const& config) {
     mBufferMaxBytes    = static_cast<uint64_t>(config.instantReplay.maxMegabytes) << 20;
 }
 
+// Instant replay switched on or off while a recording runs: like NVIDIA Instant Replay it takes effect at once. The
+// chunk being written counts from its start, so the first save can be longer than the set length.
+void Recorder::setInstantReplayTracking(bool on) {
+    if (!isActive() || mBufferMode || mTrackChunks == on) return;
+    if (on) {
+        configureInstant(settings::SettingsStore::getInstance().get());
+        mEpochChunks.clear();
+    } else {
+        mInstantSavePending = false;
+    }
+    mTrackChunks = on;
+    RecordingStatus::getInstance().setInstantReplay(on);
+    getLogger().info("Instant replay {} for the current recording", on ? "turned on" : "turned off");
+}
+
 void Recorder::saveInstantReplay() {
     using namespace ll::i18n_literals;
     if (!instantReplayAvailable()) {

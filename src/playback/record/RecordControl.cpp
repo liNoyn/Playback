@@ -219,11 +219,9 @@ void RecordControl::execute(RecordRequest const& request, ClientInstance& client
         settings::SettingsStore::getInstance().update([enable](settings::Settings& s) { s.instantReplay.enabled = enable; });
         mBufferSuppressed = false;
         if (!enable && recorder.isBuffering()) recorder.stop();
-        // a recording that is already running keeps working the way it started
-        bool const later = enable && recorder.isActive() && !recorder.instantReplayAvailable();
+        recorder.setInstantReplayTracking(enable);
         status.toast(
-            later ? "playback.record.toast.instantOnLater"_tr()
-                  : enable ? "playback.record.toast.instantOn"_tr() : "playback.record.toast.instantOff"_tr(),
+            enable ? "playback.record.toast.instantOn"_tr() : "playback.record.toast.instantOff"_tr(),
             ToastKind::Info,
             std::chrono::seconds(4)
         );
@@ -410,6 +408,8 @@ void RecordControl::keepBufferRunning(ClientInstance& client) {
         recorder.stop(); // turned off in the panel while it was running
         return;
     }
+    // switched in the panel (render thread) during a recording: apply it here, on the client thread
+    if (recorder.isActive() && !recorder.isBuffering()) recorder.setInstantReplayTracking(config.instantReplay.enabled);
     if (!config.instantReplay.enabled || mBufferSuppressed || recorder.isActive()) {
         mBufferRestartDelay = 0;
         return;

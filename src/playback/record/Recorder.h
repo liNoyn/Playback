@@ -257,6 +257,8 @@ public:
     [[nodiscard]] bool isBuffering() const { return mBufferMode && isActive(); }
     // True when saveInstantReplay() has something to save (the buffer, or a recording that began with it on).
     [[nodiscard]] bool instantReplayAvailable() const { return mTrackChunks && isActive(); }
+    // Turns the instant replay on or off for the recording in progress (client thread).
+    void setInstantReplayTracking(bool on);
 
     // Places a marker at the current tick; false when nothing is being recorded.
     bool addMarker(std::string name, int color);
