@@ -152,6 +152,8 @@ void loadReplayUIFonts() {
         return std::nullopt;
     };
     std::vector<std::filesystem::path> faces;
+    // Latin text comes first from Segoe UI Semibold, the closest Windows face to Flashback's Inter Medium.
+    if (auto face = existing({"seguisb.ttf", "segoeui.ttf"})) faces.push_back(*face);
     if (settings::effectiveLanguage().starts_with("ja")) {
         if (auto face = existing({"YuGothM.ttc", "meiryo.ttc", "msgothic.ttc"})) faces.push_back(*face);
     }

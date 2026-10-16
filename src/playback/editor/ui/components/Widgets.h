@@ -70,4 +70,8 @@ bool dropdownChip(
 // Draws the shared "no active project" placeholder.
 void noActiveProjectPlaceholder();
 
+// Flashback's panels are docked ImGui windows; this paints the dark strip their tabs sit on and opens the tab bar.
+// Call ImGui::EndTabBar() when it returns true.
+bool beginDockTabBar(char const* id);
+
 } // namespace playback::editor::ui::widgets

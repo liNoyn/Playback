@@ -546,7 +546,10 @@
                 "nextTick": "下一游戏刻",
                 "title": "时间轴",
                 "trackCount": "{} 个相机",
-                "speedTooltip": "播放速度"
+                "speedTooltip": "播放速度",
+                "windowTitle": "时间轴 ({} / {})",
+                "slowDown": "减速（当前 {:g}x，右键查看所有速度）",
+                "speedUp": "加速（当前 {:g}x，右键查看所有速度）"
             },
             "viewport": {
                 "freeCamera": "自由视角",

@@ -16,7 +16,6 @@ public:
     void                        setPage(InspectorPage page) { mPage = page; }
 
 private:
-    void drawRail(PanelContext const& ctx, float width, float height);
     void drawSelectionPage(PanelContext const& ctx);
     void drawExportPage(PanelContext const& ctx);
     void drawSettingsPage(PanelContext const& ctx);

@@ -25,6 +25,9 @@ public:
     void zoomOut();
     void resetZoom();
 
+    // "Timeline (time / tick)", the panel's title as Flashback words it.
+    [[nodiscard]] std::string windowTitle(PanelContext const& ctx) const;
+
     [[nodiscard]] float trackListWidthRatio() const { return mTrackListWidthRatio; }
     [[nodiscard]] float zoomScale() const { return mZoomScale; }
     [[nodiscard]] float horizontalScroll() const { return mScrollX; }
@@ -51,28 +54,19 @@ private:
     void                      submitSeek(PanelContext const& ctx, int tick);
     [[nodiscard]] std::string resolveKeyframeTargetCamera(PanelContext const& ctx) const;
 
-    void drawTitleRow(PanelContext const& ctx, Layout const& layout, int displayTick, bool allowInput);
+    void drawTransport(PanelContext const& ctx, Layout const& layout, bool allowInput);
+    void drawOptionsMenu(PanelContext const& ctx);
     void drawTrackHeaders(PanelContext const& ctx, Layout const& layout, bool allowInput);
-    void drawRuler(
-        PanelContext const&  ctx,
-        Layout const&        layout,
-        TimelineScale const& scale,
-        int                  displayTick
-    ); // Drawn after the track rows so the row bands do not cover it.
-    void drawTrackGrid(PanelContext const& ctx, Layout const& layout, TimelineScale const& scale);
-    // In/out markers for the export range, drawn over the canvas and draggable by their handles.
+    void drawRuler(PanelContext const& ctx, Layout const& layout, TimelineScale const& scale);
+    // In/out markers for the export range, drawn over the ruler and draggable by their ends.
     void drawExportRange(PanelContext const& ctx, Layout const& layout, TimelineScale const& scale, bool allowInput);
-
     void drawRangeBar(PanelContext const& ctx, Layout const& layout, bool allowInput);
-    void drawTitleLabel(PanelContext const& ctx, float height);
-    void drawTransportGroup(PanelContext const& ctx, int displayTick, float width);
-
     TrackTreeModel mTrackTree;
     Animator       mAnimator;
     float          mZoomScale{1.0f};
     float          mScrollX{};
     float          mScrollY{};
-    float          mTrackListWidthRatio{0.30f};
+    float          mTrackListWidthRatio{0.13f};
     int            mPendingSeekTick{-1};
     int            mRulerDragTick{-1};
     std::string    mTrackSearch;

@@ -418,4 +418,14 @@ void noActiveProjectPlaceholder() {
     ImGui::TextDisabled("%s", "playback.refactorEditor.common.noActiveProject"_tr().c_str());
 }
 
+bool beginDockTabBar(char const* id) {
+    ImVec2 const origin = ImGui::GetCursorScreenPos();
+    float const  width  = ImGui::GetContentRegionAvail().x;
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        origin,
+        {origin.x + width, origin.y + ImGui::GetFrameHeight()},
+        theme::kBgHeader
+    );
+    return ImGui::BeginTabBar(id, ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_NoTooltip);
+}
 } // namespace playback::editor::ui::widgets

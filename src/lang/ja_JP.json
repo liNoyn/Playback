@@ -546,7 +546,10 @@
                 "nextTick": "次の tick",
                 "title": "タイムライン",
                 "trackCount": "カメラ {} 台",
-                "speedTooltip": "再生速度"
+                "speedTooltip": "再生速度",
+                "windowTitle": "タイムライン ({} / {})",
+                "slowDown": "減速（現在 {:g} 倍・右クリックで速度一覧）",
+                "speedUp": "加速（現在 {:g} 倍・右クリックで速度一覧）"
             },
             "viewport": {
                 "freeCamera": "フリーカメラ",

@@ -102,15 +102,31 @@ bool vectorInput(
 
 } // namespace
 
+// The pages are tabs on a docked panel, the way Flashback lays out its side windows.
 void DetailsPanel::draw(PanelContext const& ctx) {
-    ImVec2 const origin = ImGui::GetCursorScreenPos();
-    ImVec2 const avail  = ImGui::GetContentRegionAvail();
-    float const  railW  = metrics::rail();
-    drawRail(ctx, railW, avail.y);
+    struct Entry {
+        InspectorPage page;
+        std::string   label;
+    };
+    std::array const entries{
+        Entry{InspectorPage::Selection, "playback.refactorEditor.inspector.selection"_tr()},
+        Entry{InspectorPage::Export,    "playback.refactorEditor.inspector.export"_tr()   },
+        Entry{InspectorPage::Settings,  "playback.refactorEditor.inspector.settings"_tr() },
+    };
+    if (widgets::beginDockTabBar("##inspector-tabs")) {
+        for (auto const& entry : entries) {
+            std::string const label = entry.label + "###inspector-tab-" + std::to_string(static_cast<int>(entry.page));
+            if (ImGui::BeginTabItem(label.c_str())) {
+                mPage = entry.page;
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
 
-    ImGui::SetCursorScreenPos({origin.x + railW, origin.y});
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {theme::kPanelPadding, theme::kPanelPadding});
-    ImGui::BeginChild("##InspectorBody", {std::max(1.0f, avail.x - railW), avail.y}, false);
+    ImVec2 const avail = ImGui::GetContentRegionAvail();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {theme::kPanelPadding * metrics::scale(), theme::kPanelPadding * metrics::scale()});
+    ImGui::BeginChild("##InspectorBody", {std::max(1.0f, avail.x), std::max(1.0f, avail.y)}, ImGuiChildFlags_AlwaysUseWindowPadding);
     if (!ctx.state.project) {
         widgets::noActiveProjectPlaceholder();
     } else {
@@ -129,42 +145,6 @@ void DetailsPanel::draw(PanelContext const& ctx) {
     ImGui::EndChild();
     ImGui::PopStyleVar();
 }
-
-void DetailsPanel::drawRail(PanelContext const& ctx, float width, float height) {
-    ImVec2 const origin   = ImGui::GetCursorScreenPos();
-    auto*        drawList = ImGui::GetWindowDrawList();
-    drawList->AddRectFilled(origin, {origin.x + width, origin.y + height}, theme::kRailBg);
-    drawList->AddLine({origin.x + width, origin.y}, {origin.x + width, origin.y + height}, theme::kBorder);
-
-    struct Entry {
-        InspectorPage page;
-        char const*   icon;
-        std::string   tooltip;
-        bool          enabled;
-    };
-    bool const       exportActive = exporting::isExportActive(ctx.state.exportStatus.state);
-    std::array const entries{
-        Entry{InspectorPage::Selection, ICON_PANEL_LEFT, "playback.refactorEditor.inspector.selection"_tr(), true},
-        Entry{InspectorPage::Export,    ICON_EXPORT,     "playback.refactorEditor.inspector.export"_tr(),    true},
-        Entry{InspectorPage::Settings,  ICON_SETTINGS,   "playback.refactorEditor.inspector.settings"_tr(),  true},
-    };
-
-    float const button = metrics::iconButton();
-    float       y      = origin.y + 4.0f;
-    for (auto const& entry : entries) {
-        bool const active = mPage == entry.page;
-        ImGui::SetCursorScreenPos({origin.x + (width - button) * 0.5f, y});
-        ImGui::PushID(static_cast<int>(entry.page));
-        if (widgets::iconToggle("rail", entry.icon, entry.tooltip.c_str(), active, entry.enabled)) mPage = entry.page;
-        ImGui::PopID();
-        if (active) {
-            drawList->AddRectFilled({origin.x, y + 3.0f}, {origin.x + 2.0f, y + button - 3.0f}, theme::kRailActive);
-        }
-        y += button + 2.0f;
-    }
-    (void)exportActive;
-}
-
 void DetailsPanel::drawSelectionPage(PanelContext const& ctx) {
     auto const  project   = ctx.state.project;
     auto const& selection = ctx.selection;

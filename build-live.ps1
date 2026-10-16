@@ -1,9 +1,9 @@
-﻿# Builds the live-stream fork with portable toolchains (see docs/live-stream.md).
+# Builds the live-stream fork with portable toolchains (see docs/live-stream.md).
 # Requires Visual Studio 2022 Build Tools (C++); Git, xmake and LLVM are taken from %USERPROFILE%\.toolchains.
 $ErrorActionPreference = 'Stop'
 $tools = Join-Path $env:USERPROFILE '.toolchains'
 $env:PATH = "$tools\mingit\cmd;$tools\xmake-zip\xmake;$tools\llvm\bin;$env:PATH"
-if (-not $env:PLAYBACK_VERSION) { $env:PLAYBACK_VERSION = 'v0.3.3-mc26.50-live.7' }
+if (-not $env:PLAYBACK_VERSION) { $env:PLAYBACK_VERSION = 'v0.3.3-mc26.50-live.8' }
 
 Set-Location $PSScriptRoot
 xmake repo -u

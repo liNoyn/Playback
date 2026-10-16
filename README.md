@@ -21,8 +21,9 @@ camera editor for LeviLamina, that makes **recording** a first-class part of the
 - **Replay library**: favorites, tags, notes, Flashback state, and converting old replays afterwards.
 - **Lag-corrected replays**: a laggy server is played back at normal speed.
 
-Replaying and editing replays (timeline, camera keyframes, video export) are inherited from upstream and unchanged.
-This fork is not affiliated with the upstream author.
+Replaying and editing replays (timeline, camera keyframes, video export) work as upstream, with the editor restyled
+after Flashback: a full-width timeline with white ticks and playhead, keyframe shapes that show their interpolation,
+a tabbed side panel and blue buttons. This fork is not affiliated with the upstream author.
 
 > [!WARNING]
 > Pre-release software. The recording features below are new and have had limited testing in the game, so keep

@@ -546,7 +546,10 @@
                 "nextTick": "Next tick",
                 "title": "Timeline",
                 "trackCount": "{} cameras",
-                "speedTooltip": "Playback speed"
+                "speedTooltip": "Playback speed",
+                "windowTitle": "Timeline ({} / {})",
+                "slowDown": "Slow down (current speed: {:g}x, right-click for all speeds)",
+                "speedUp": "Speed up (current speed: {:g}x, right-click for all speeds)"
             },
             "viewport": {
                 "freeCamera": "Free camera",

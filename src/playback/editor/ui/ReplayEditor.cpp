@@ -72,12 +72,12 @@ void ReplayEditor::setUiScaleTier(UiScaleTier tier) {
 }
 
 void ReplayEditor::loadLayoutPreferences() {
-    mDetailsWidthRatio   = 0.28f;
-    mTimelineHeightRatio = 0.35f;
+    mDetailsWidthRatio   = 0.22f;
+    mTimelineHeightRatio = 0.27f;
     mVideoAspectRatio    = 16.0f / 9.0f;
     mCameraPathVisible   = true;
     mUiScaleTier         = UiScaleTier::Auto;
-    mTimelinePanel.setViewPreferences(0.30f, 1.0f, 0.0f);
+    mTimelinePanel.setViewPreferences(0.13f, 1.0f, 0.0f);
     mTimelineViewPreferences.clear();
     mActiveReplayPath.clear();
 
@@ -92,12 +92,12 @@ void ReplayEditor::loadLayoutPreferences() {
                 mUiScaleTier = uiScaleTierFromName(uiScale->get<std::string>());
             }
             mDetailsWidthRatio =
-                std::clamp(readFiniteFloat(config, "detailsWidthRatio", mDetailsWidthRatio), 0.15f, 0.50f);
+                std::clamp(readFiniteFloat(config, "sidePanelRatio", mDetailsWidthRatio), 0.15f, 0.50f);
             mTimelineHeightRatio =
-                std::clamp(readFiniteFloat(config, "timelineHeightRatio", mTimelineHeightRatio), 0.18f, 0.65f);
+                std::clamp(readFiniteFloat(config, "bottomTimelineRatio", mTimelineHeightRatio), 0.18f, 0.65f);
             mVideoAspectRatio = std::clamp(readFiniteFloat(config, "videoAspectRatio", mVideoAspectRatio), 0.25f, 4.0f);
             float const trackListWidthRatio =
-                readFiniteFloat(config, "trackListWidthRatio", mTimelinePanel.trackListWidthRatio());
+                readFiniteFloat(config, "timelineListRatio", mTimelinePanel.trackListWidthRatio());
             mTimelinePanel.setViewPreferences(trackListWidthRatio, 1.0f, 0.0f);
 
             auto const views = config.find("timelineViews");
@@ -139,12 +139,12 @@ void ReplayEditor::saveLayoutPreferences() const {
     }
 
     nlohmann::ordered_json const config{
-        {"detailsWidthRatio",   mDetailsWidthRatio                        },
-        {"timelineHeightRatio", mTimelineHeightRatio                      },
+        {"sidePanelRatio",   mDetailsWidthRatio                        },
+        {"bottomTimelineRatio", mTimelineHeightRatio                      },
         {"videoAspectRatio",    mVideoAspectRatio                         },
         {"showCameraPath",      mCameraPathVisible                        },
         {"uiScale",             std::string(uiScaleTierName(mUiScaleTier))},
-        {"trackListWidthRatio", mTimelinePanel.trackListWidthRatio()      },
+        {"timelineListRatio", mTimelinePanel.trackListWidthRatio()      },
         {"timelineViews",       std::move(timelineViews)                  }
     };
     std::ofstream output(kLayoutPreferencesPath, std::ios::trunc);

@@ -150,22 +150,23 @@ constexpr float kFontScaleNavTitle    = kNavigationLayout.titleFontSize / kBaseF
 constexpr float kFontScaleNavBackIcon = kNavigationLayout.backIconFontSize / kBaseFontSize;
 constexpr float kFontScaleNavControl  = kNavigationLayout.controlFontSize / kBaseFontSize;
 
+// Flashback's editor palette: blue-grey surfaces, white text, blue accents.
 constexpr ImU32 kColorAccent        = playback::editor::ui::theme::kAccent;
-constexpr ImU32 kColorAccentHover   = IM_COL32(78, 158, 250, 255);
-constexpr ImU32 kColorBg            = IM_COL32(22, 23, 25, 255);
-constexpr ImU32 kColorPanelBg       = IM_COL32(30, 32, 35, 255);
-constexpr ImU32 kColorCardBg        = IM_COL32(25, 27, 29, 255);
-constexpr ImU32 kColorCardHoverFill = IM_COL32(38, 41, 45, 255);
-constexpr ImU32 kColorCardSelected  = IM_COL32(70, 72, 76, 255);
-constexpr ImU32 kColorCardBorder    = IM_COL32(76, 80, 86, 220);
-constexpr ImU32 kColorCardHover     = IM_COL32(104, 110, 120, 255);
-constexpr ImU32 kColorButton        = IM_COL32(48, 50, 54, 255);
-constexpr ImU32 kColorButtonHover   = IM_COL32(64, 67, 72, 255);
-constexpr ImU32 kColorButtonActive  = IM_COL32(78, 81, 88, 255);
-constexpr ImU32 kColorPreviewBg     = IM_COL32(30, 42, 58, 255);
+constexpr ImU32 kColorAccentHover   = IM_COL32(0x00, 0x7c, 0xf3, 255);
+constexpr ImU32 kColorBg            = IM_COL32(0x18, 0x18, 0x1f, 255);
+constexpr ImU32 kColorPanelBg       = IM_COL32(0x20, 0x20, 0x28, 255);
+constexpr ImU32 kColorCardBg        = IM_COL32(0x1d, 0x1d, 0x25, 255);
+constexpr ImU32 kColorCardHoverFill = IM_COL32(0x2a, 0x2a, 0x36, 255);
+constexpr ImU32 kColorCardSelected  = IM_COL32(0x40, 0x40, 0x58, 255);
+constexpr ImU32 kColorCardBorder    = IM_COL32(0x48, 0x48, 0x5a, 220);
+constexpr ImU32 kColorCardHover     = IM_COL32(0x68, 0x68, 0x80, 255);
+constexpr ImU32 kColorButton        = IM_COL32(0x30, 0x30, 0x3c, 255);
+constexpr ImU32 kColorButtonHover   = IM_COL32(0x40, 0x40, 0x50, 255);
+constexpr ImU32 kColorButtonActive  = IM_COL32(0x50, 0x50, 0x64, 255);
+constexpr ImU32 kColorPreviewBg     = IM_COL32(0x28, 0x28, 0x38, 255);
 constexpr ImU32 kColorDanger        = IM_COL32(210, 60, 60, 255);
-constexpr ImU32 kColorText          = IM_COL32(238, 240, 244, 255);
-constexpr ImU32 kColorTextDim       = IM_COL32(164, 168, 176, 255);
+constexpr ImU32 kColorText          = IM_COL32(0xff, 0xff, 0xff, 255);
+constexpr ImU32 kColorTextDim       = IM_COL32(0xaa, 0xaa, 0xaa, 255);
 constexpr ImU32 kColorBackdrop      = IM_COL32(0, 0, 0, 88);
 
 // Selection reads as an accent tint over the row, so it stays apparent against the dark panels and is never
