@@ -66,6 +66,14 @@ struct ReplayCameraViewpoint {
     float fov{70.0f};
 };
 
+// A player in the replay world, for the editor's player list.
+struct ReplayPlayerInfo {
+    int64_t     id{};
+    std::string name;
+    // The player whose game was recorded.
+    bool recorder{};
+};
+
 class ReplaySession {
 private:
     static constexpr size_t MAX_LEVEL_CHUNKS_IN_FLIGHT          = 64;
@@ -159,6 +167,8 @@ private:
     ReplayExportTimelinePhase            mExportTimelinePhase{ReplayExportTimelinePhase::Inactive};
     int                                  mExportTargetTick{-1};
     std::optional<ReplayCameraViewpoint> mExportCameraViewpoint;
+    // Flashback-style spectating: the camera sits in this player's eyes until cleared.
+    std::optional<ActorUniqueID> mSpectateTarget;
     float                                mPlaybackSpeed{1.0f};
     float                                mPlaybackTickAccumulator{};
     std::atomic<SteadyTimePoint>         mTickAdvancedAt{};
@@ -370,6 +380,13 @@ public:
     // Preview drives the observer (the camera) per frame at the render partial tick.
 
     void updateObserverPreview();
+
+    // Moves the observer into the spectated player's eyes; false when there is nobody to follow this frame.
+    bool followSpectateTarget();
+
+    void                                       setSpectateTarget(std::optional<ActorUniqueID> target);
+    [[nodiscard]] std::optional<ActorUniqueID> spectateTarget() const noexcept { return mSpectateTarget; }
+    [[nodiscard]] std::vector<ReplayPlayerInfo> listReplayPlayers() const;
 
     [[nodiscard]] int getCurrentTick() const {
         int const requestedTick = mRequestedSeekTick.load(std::memory_order_acquire);

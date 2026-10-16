@@ -110,6 +110,7 @@ void DetailsPanel::draw(PanelContext const& ctx) {
     };
     std::array const entries{
         Entry{InspectorPage::Selection, "playback.refactorEditor.inspector.selection"_tr()},
+        Entry{InspectorPage::Players,   "playback.refactorEditor.players.title"_tr()      },
         Entry{InspectorPage::Export,    "playback.refactorEditor.inspector.export"_tr()   },
         Entry{InspectorPage::Settings,  "playback.refactorEditor.inspector.settings"_tr() },
     };
@@ -133,6 +134,9 @@ void DetailsPanel::draw(PanelContext const& ctx) {
         switch (mPage) {
         case InspectorPage::Selection:
             drawSelectionPage(ctx);
+            break;
+        case InspectorPage::Players:
+            drawPlayersPage(ctx);
             break;
         case InspectorPage::Export:
             drawExportPage(ctx);
@@ -172,6 +176,53 @@ void DetailsPanel::drawSelectionPage(PanelContext const& ctx) {
     if (drawKeyframe(ctx)) return;
     if (drawMarker(ctx)) return;
     drawOverview(ctx);
+}
+
+// Flashback's player list: click a player to watch through their eyes, click again or pick the free camera to leave.
+void DetailsPanel::drawPlayersPage(PanelContext const& ctx) {
+    auto const& state = ctx.state;
+    auto const  stop  = [&ctx] { ctx.submitAction({EditorActionType::StopSpectating}); };
+
+    std::string spectatingName;
+    for (auto const& player : state.players) {
+        if (player.id == state.spectatingId) spectatingName = player.name;
+    }
+    if (!state.spectatingId.empty()) {
+        ImGui::TextUnformatted(
+            "playback.refactorEditor.players.spectating"_tr(spectatingName.empty() ? state.spectatingId : spectatingName)
+                .c_str()
+        );
+        if (property::actionButton("playback.refactorEditor.players.addKeyframe"_tr().c_str())) {
+            (void)ctx.commands.addKeyframeAtPlayhead();
+        }
+        widgets::itemTooltip("playback.refactorEditor.players.addKeyframeHint"_tr().c_str());
+        if (property::actionButton("playback.refactorEditor.players.stop"_tr().c_str())) stop();
+        ImGui::Separator();
+    } else {
+        ImGui::TextDisabled("%s", "playback.refactorEditor.players.hint"_tr().c_str());
+        ImGui::Separator();
+    }
+
+    if (state.players.empty()) {
+        ImGui::TextDisabled("%s", "playback.refactorEditor.players.none"_tr().c_str());
+        return;
+    }
+    for (auto const& player : state.players) {
+        bool const  current = player.id == state.spectatingId;
+        std::string label   = player.name;
+        if (player.recorder) label += "  " + "playback.refactorEditor.players.recorder"_tr();
+        label += "##player-" + player.id;
+        if (ImGui::Selectable(label.c_str(), current)) {
+            if (current) {
+                stop();
+            } else {
+                ctx.selection.clear();
+                EditorAction action{EditorActionType::SpectatePlayer};
+                action.id = player.id;
+                ctx.submitAction(std::move(action));
+            }
+        }
+    }
 }
 
 bool DetailsPanel::drawWorldActor(PanelContext const& ctx) {

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "playback/exporting/ExportTypes.h"
 #include "playback/keyframe/CameraTimelineRegistry.h"
@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace playback::state {
 
@@ -21,6 +22,13 @@ struct ProjectPersistenceState {
     bool        dirty{};
     std::string projectFile;
     std::string error;
+};
+
+// A player in the replay, listed in the editor's Players tab.
+struct ReplayPlayerEntry {
+    std::string id;
+    std::string name;
+    bool        recorder{};
 };
 
 struct EditorState {
@@ -39,6 +47,9 @@ struct EditorState {
     ProjectPersistenceState                                      persistence;
     exporting::ExportStatus                                      exportStatus;
     ReplayBrowserState                                           browser;
+    std::vector<ReplayPlayerEntry>                               players;
+    // Id of the player the camera is spectating, empty when it is free.
+    std::string spectatingId;
 };
 
 } // namespace playback::state

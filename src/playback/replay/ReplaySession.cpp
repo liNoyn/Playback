@@ -458,6 +458,7 @@ bool ReplaySession::start(std::filesystem::path filePath) {
 }
 
 void ReplaySession::clearReplayData() {
+    mSpectateTarget.reset();
     mReplayDimensionProfile.store({}, std::memory_order_release);
     mStopRequested.store(false, std::memory_order_release);
     mRequestedSeekTick.store(-1, std::memory_order_release);
@@ -707,6 +708,11 @@ void ReplaySession::syncObserverServerPosition(Vec3 const& feetPosition, Vec2 co
 
 void ReplaySession::updateObserverPreview() {
     if (!mReplayPlayer || !mReplayWorldJoined) return;
+    // Spectating outranks the camera tracks and runs while paused too, so seeking keeps the view in the player.
+    if (mSpectateTarget && mExportTimelinePhase == ReplayExportTimelinePhase::Inactive) {
+        (void)followSpectateTarget();
+        return;
+    }
     if (mIsPaused) return;
     if (mPendingReplayDimension) return;
     if (!mNetworkHandler) return;
@@ -751,6 +757,70 @@ void ReplaySession::updateObserverPreview() {
     teleportReplayPlayer(feetPosition, rotation);
     cancelNativeMovementInterpolation(*mReplayPlayer, feetPosition, rotation, rotation.y);
     if (serverSyncNeeded) syncObserverServerPosition(feetPosition, rotation);
+}
+
+void ReplaySession::setSpectateTarget(std::optional<ActorUniqueID> target) {
+    if (mSpectateTarget == target) return;
+    mSpectateTarget = target;
+    // The camera tracks resume from scratch rather than from a pose cached before spectating.
+    mObserverPreviewInRange = false;
+    mLastObserverServerSyncChunk.reset();
+    getLogger().debug("Spectate target {}", target ? std::to_string(target->rawID) : std::string{"cleared"});
+}
+
+std::vector<ReplayPlayerInfo> ReplaySession::listReplayPlayers() const {
+    std::vector<ReplayPlayerInfo> players;
+    if (!mReplayPlayer || !mReplayWorldJoined) return players;
+    auto& level = mReplayPlayer->getLevel();
+    for (auto const& id : mRecordedEntityIds) {
+        auto* actor = level.fetchEntity(id, false);
+        if (!actor || actor == mReplayPlayer || !actor->isPlayer()) continue;
+        std::string name = static_cast<Player*>(actor)->getRealName();
+        if (name.empty()) name = actor->getNameTag();
+        if (name.empty()) name = std::to_string(id.rawID);
+        players.push_back({id.rawID, std::move(name), id == RecordedPlayerUniqueId});
+    }
+    // The recorded player first, then by name, so the list does not reshuffle as entities update.
+    std::ranges::sort(players, [](ReplayPlayerInfo const& left, ReplayPlayerInfo const& right) {
+        if (left.recorder != right.recorder) return left.recorder;
+        return left.name < right.name;
+    });
+    return players;
+}
+
+bool ReplaySession::followSpectateTarget() {
+    if (!mSpectateTarget || !mReplayPlayer || !mReplayWorldJoined || !mNetworkHandler || mPendingReplayDimension) {
+        return false;
+    }
+    auto* actor = mReplayPlayer->getLevel().fetchEntity(*mSpectateTarget, false);
+    // Out of range or not spawned at this point of the replay: hold the view until the player is back.
+    if (!actor) return false;
+
+    // Use the pose the renderer draws this frame, so the view moves as smoothly as the player's model would.
+    Vec3 eyes     = actor->getPosition();
+    Vec2 rotation = actor->getRotation();
+    if (auto const key = mEntityRenderKeys.find(*mSpectateTarget); key != mEntityRenderKeys.end()) {
+        if (auto const time = getEntityRenderSampleTime()) {
+            if (auto const pose = visuals::sampleReplayEntityPose(key->second, *time)) {
+                eyes     = Vec3{pose->position.x, pose->position.y, pose->position.z};
+                rotation = Vec2{pose->pitch, pose->headYaw};
+            }
+        }
+    }
+    if (!std::isfinite(eyes.x) || !std::isfinite(eyes.y) || !std::isfinite(eyes.z) || !std::isfinite(rotation.x)
+        || !std::isfinite(rotation.y)) {
+        return false;
+    }
+
+    // A player's position is at eye height, the same point the observer camera is placed by.
+    ChunkPos const cameraChunk{eyes.x, eyes.z};
+    bool const     serverSyncNeeded = !mLastObserverServerSyncChunk || mLastObserverServerSyncChunk->x != cameraChunk.x
+                               || mLastObserverServerSyncChunk->z != cameraChunk.z;
+    forceFirstPersonCamera();
+    teleportReplayPlayer(eyes, rotation);
+    cancelNativeMovementInterpolation(*mReplayPlayer, eyes, rotation, rotation.y);
+    if (serverSyncNeeded) syncObserverServerPosition(eyes, rotation);
+    return true;
 }
 
 void ReplaySession::markReplayTickAdvanced() noexcept {
@@ -869,8 +939,12 @@ ReplaySession::createReplayEntityRenderScope(visuals::ReplaySampleTime const& sa
 
     std::vector<visuals::EntityRenderTarget> targets;
     targets.reserve(mEntityRenderKeys.size());
+    // While spectating in the editor the camera is inside the player, so their own body stays out of view.
+    bool const hideSpectated = mSpectateTarget && mExportTimelinePhase == ReplayExportTimelinePhase::Inactive;
     for (auto const& [id, key] : mEntityRenderKeys) {
-        targets.push_back({key, mReplayPlayer->getLevel().fetchEntity(id, false)});
+        targets.push_back(
+            {key, mReplayPlayer->getLevel().fetchEntity(id, false), hideSpectated && id == *mSpectateTarget}
+        );
     }
     return visuals::createReplayEntityRenderScope(targets, sample);
 }
@@ -1251,6 +1325,7 @@ void ReplaySession::updateControlPlane() {
 }
 
 bool ReplaySession::init(std::filesystem::path filePath) {
+    mSpectateTarget.reset();
     auto path       = filePath.string();
     int  errorCode  = 0;
     auto rawArchive = zip_open(path.c_str(), ZIP_RDONLY, &errorCode);

@@ -561,6 +561,16 @@
                 "position": "位置",
                 "rotation": "朝向"
             },
+            "players": {
+                "title": "玩家",
+                "hint": "点击玩家即可以其视角观战。观战时添加镜头关键帧，就能在视频中使用该视角。",
+                "spectating": "正在观战：{}",
+                "addKeyframe": "以此视角添加关键帧",
+                "addKeyframeHint": "以观战视角，在所选镜头轨道（若无则为第一条）的播放位置添加关键帧。",
+                "stop": "停止观战（自由镜头）",
+                "recorder": "（录制者）",
+                "none": "回放的此时间点没有已加载的玩家。"
+            },
             "inspector": {
                 "selection": "选择",
                 "export": "导出",

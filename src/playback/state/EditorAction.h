@@ -35,6 +35,9 @@ enum class EditorActionType {
     SetReplayFavorite,
     SetReplayDetails,
     ConvertReplayToFlashback,
+    // id: the player's unique id; StopSpectating returns the camera to free flight.
+    SpectatePlayer,
+    StopSpectating,
     UndoEditorEdit,
     RedoEditorEdit,
     AddFreeCamera,

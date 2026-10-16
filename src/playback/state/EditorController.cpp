@@ -16,6 +16,7 @@
 
 #include "ll/api/i18n/I18n.h"
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <filesystem>
 #include <utility>
@@ -328,6 +329,7 @@ void EditorController::applyEditorAction(EditorAction const& action) {
         mCommandStack.push(CommandFactory::createSetSubActorDetails(action.id, action.details), mProject);
         break;
     case EditorActionType::SetPreviewCamera:
+        replay::ReplaySession::getInstance().setSpectateTarget(std::nullopt);
         mPreviewCameraId.reset();
         if (std::ranges::any_of(mProject.cameras, [&](auto const& camera) {
                 return camera.id == action.id && state::editing::model::isCameraRenderable(camera);
@@ -336,6 +338,7 @@ void EditorController::applyEditorAction(EditorAction const& action) {
         }
         break;
     case EditorActionType::ClearPreviewCamera:
+        replay::ReplaySession::getInstance().setSpectateTarget(std::nullopt);
         mPreviewCameraId.reset();
         break;
     default:
@@ -403,6 +406,12 @@ void EditorController::publishState(bool hudVisible) {
     state.browser.operation = mBrowserOperation;
     state.browser.error     = mBrowserError;
     state.browser.snapshot  = mBrowserSnapshot;
+    if (state.editorVisible) {
+        for (auto& player : session.listReplayPlayers()) {
+            state.players.push_back({std::to_string(player.id), std::move(player.name), player.recorder});
+        }
+        if (auto const target = session.spectateTarget()) state.spectatingId = std::to_string(target->rawID);
+    }
     mContext.publish(std::move(state));
 }
 
@@ -456,6 +465,20 @@ void EditorController::tick(bool hudVisible) {
         switch (action.type) {
         case EditorActionType::TogglePause:
             (void)session.setPaused(!session.isPaused());
+            break;
+        case EditorActionType::SpectatePlayer: {
+            int64_t id{};
+            auto const [end, error] = std::from_chars(action.id.data(), action.id.data() + action.id.size(), id);
+            if (error == std::errc{} && end == action.id.data() + action.id.size()) {
+                // Like Flashback, spectating replaces the camera track preview.
+                mPreviewCameraId.reset();
+                publishCameraTimeline();
+                session.setSpectateTarget(ActorUniqueID{id});
+            }
+            break;
+        }
+        case EditorActionType::StopSpectating:
+            session.setSpectateTarget(std::nullopt);
             break;
         case EditorActionType::Seek:
             session.requestSeek(action.tick);

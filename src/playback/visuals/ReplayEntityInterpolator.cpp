@@ -1,4 +1,4 @@
-﻿#include "ReplayEntityInterpolator.h"
+#include "ReplayEntityInterpolator.h"
 
 #include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
 #include "mc/deps/vanilla_components/StateVectorComponent.h"
@@ -217,6 +217,8 @@ createReplayEntityRenderScope(std::vector<EntityRenderTarget> const& targets, Re
             );
 
             auto& applied = state->actors.back();
+            // Far below the world is out of every camera and casts no shadow onto it.
+            if (target.hidden && positioned) applied.exportPosition.y -= 4096.0f;
             if (positioned) {
                 applied.stateVector->mPos      = applied.exportPosition;
                 applied.stateVector->mPosPrev  = applied.stateVector->mPos;
@@ -252,6 +254,15 @@ createReplayEntityRenderScope(std::vector<EntityRenderTarget> const& targets, Re
     } catch (...) {
         return {};
     }
+}
+
+std::optional<EntityRenderPose> sampleReplayEntityPose(EntityRenderKey key, ReplaySampleTime const& sample) {
+    if (!sample.isValid()) return std::nullopt;
+    auto const poses = gEntityPoses.load(std::memory_order_acquire);
+    if (!poses) return std::nullopt;
+    auto const history = poses->find(key);
+    if (history == poses->end()) return std::nullopt;
+    return samplePose(history->second, sample);
 }
 
 void queueReplayEntityPose(EntityRenderKey key, EntityRenderPose previous, EntityRenderPose current) {

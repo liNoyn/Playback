@@ -1,9 +1,10 @@
-﻿#pragma once
+#pragma once
 
 #include "playback/visuals/ReplaySampleTime.h"
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 class Actor;
@@ -36,12 +37,17 @@ struct EntityRenderPose {
 struct EntityRenderTarget {
     EntityRenderKey key;
     Actor*          actor{};
+    // Drawn out of view for the frame, e.g. the player being spectated, whose body would fill the camera.
+    bool hidden{};
 };
 
 class ScopedReplayEntityPose;
 
 [[nodiscard]] std::unique_ptr<ScopedReplayEntityPose>
 createReplayEntityRenderScope(std::vector<EntityRenderTarget> const& targets, ReplaySampleTime const& sample);
+
+// The interpolated pose the renderer would use for this entity at the given time.
+[[nodiscard]] std::optional<EntityRenderPose> sampleReplayEntityPose(EntityRenderKey key, ReplaySampleTime const& sample);
 
 void queueReplayEntityPose(EntityRenderKey key, EntityRenderPose previous, EntityRenderPose current);
 void commitReplayEntityPoses(int64_t tick);

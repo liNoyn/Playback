@@ -561,6 +561,16 @@
                 "position": "Position",
                 "rotation": "Rotation"
             },
+            "players": {
+                "title": "Players",
+                "hint": "Click a player to watch through their eyes. Add camera keyframes while spectating to use their view in a video.",
+                "spectating": "Spectating {}",
+                "addKeyframe": "Add Keyframe from This View",
+                "addKeyframeHint": "Adds a keyframe at the playhead to the selected camera track (or the first one) with the spectated view.",
+                "stop": "Stop Spectating (Free Camera)",
+                "recorder": "(recorded)",
+                "none": "No players are loaded at this point of the replay."
+            },
             "inspector": {
                 "selection": "Selection",
                 "export": "Export",

@@ -20,6 +20,7 @@ camera editor for LeviLamina, that makes **recording** a first-class part of the
 - **Auto-record**: rules by world / server / dimension.
 - **Replay library**: favorites, tags, notes, Flashback state, and converting old replays afterwards.
 - **Lag-corrected replays**: a laggy server is played back at normal speed.
+- **Player spectating**, as in Flashback: the editor's Players tab puts the camera in a player's eyes, and camera keyframes can be added from that view.
 
 Replaying and editing replays (timeline, camera keyframes, video export) work as upstream, with the editor restyled
 after Flashback: a full-width timeline with white ticks and playhead, keyframe shapes that show their interpolation,

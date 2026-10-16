@@ -99,6 +99,12 @@ void ViewportPanel::drawToolbar(PanelContext const& ctx) {
             std::ranges::find(project->cameras, selectedCamera->cameraId, &state::editing::model::CameraEntity::id);
         if (camera != project->cameras.end()) cameraLabel = camera->name;
     }
+    bool const spectating = !state.spectatingId.empty();
+    if (spectating) {
+        for (auto const& player : state.players) {
+            if (player.id == state.spectatingId) cameraLabel = "playback.refactorEditor.players.spectating"_tr(player.name);
+        }
+    }
     if (widgets::dropdownChip(
             "viewport-camera",
             cameraLabel.c_str(),
@@ -109,7 +115,11 @@ void ViewportPanel::drawToolbar(PanelContext const& ctx) {
         ImGui::OpenPopup("##viewport-camera-menu");
     }
     if (ImGui::BeginPopup("##viewport-camera-menu")) {
-        if (ImGui::MenuItem("playback.refactorEditor.viewport.freeCamera"_tr().c_str(), nullptr, !selectedCamera)) {
+        if (ImGui::MenuItem(
+                "playback.refactorEditor.viewport.freeCamera"_tr().c_str(),
+                nullptr,
+                !selectedCamera && !spectating
+            )) {
             ctx.selection.clear();
             ctx.submitAction({EditorActionType::ClearPreviewCamera});
         }
