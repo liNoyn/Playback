@@ -750,11 +750,18 @@ void drawHud() {
     if (ImGui::Begin("##playbackRecordingHud", nullptr, flags)) {
         ImGui::SetWindowFontScale(config.hud.scale);
         float const opacity = config.hud.opacity;
-        auto        chip    = [&](auto&& body) {
+        // Each chip needs an ID that stays the same from frame to frame: ImGui hides an auto-sized child on the first
+        // frame it sees it, so a new ID every frame makes the chip flicker (and leaves a dead child window behind).
+        auto chip = [&](std::string const& id, auto&& body) {
             ImGui::PushStyleColor(ImGuiCol_ChildBg, color(kGround, 0.82f * opacity));
             ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {10, 6});
-            ImGui::BeginChild(ImGui::GetID(&body), {0, 0}, ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoInputs);
+            ImGui::BeginChild(
+                id.c_str(),
+                {0, 0},
+                ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding,
+                ImGuiWindowFlags_NoInputs
+            );
             body();
             ImGui::EndChild();
             ImGui::PopStyleVar(2);
@@ -825,7 +832,7 @@ void drawHud() {
                     ImGui::TextColored(color(kInkDim, opacity), "%s %d", ICON_MARKER, status.markers);
                 }
             };
-            chip(line);
+            chip("##hud-status", line);
         }
 
         for (auto const& toast : status.toasts) {
@@ -836,9 +843,8 @@ void drawHud() {
                 ImGui::TextColored(color(kInk, opacity), "%s", toast.text.c_str());
                 ImGui::PopTextWrapPos();
             };
-            ImGui::PushID(&toast);
-            chip(body);
-            ImGui::PopID();
+            // a toast keeps the moment it was shown for its whole life, unlike its address in the copied snapshot
+            chip(std::format("##hud-toast-{}", toast.shownAt.time_since_epoch().count()), body);
         }
     }
     ImGui::End();

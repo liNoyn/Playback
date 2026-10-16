@@ -3,7 +3,7 @@
 $ErrorActionPreference = 'Stop'
 $tools = Join-Path $env:USERPROFILE '.toolchains'
 $env:PATH = "$tools\mingit\cmd;$tools\xmake-zip\xmake;$tools\llvm\bin;$env:PATH"
-if (-not $env:PLAYBACK_VERSION) { $env:PLAYBACK_VERSION = 'v0.3.3-mc26.50-live.5' }
+if (-not $env:PLAYBACK_VERSION) { $env:PLAYBACK_VERSION = 'v0.3.3-mc26.50-live.6' }
 
 Set-Location $PSScriptRoot
 xmake repo -u
