@@ -384,6 +384,10 @@ public:
     // Moves the observer into the spectated player's eyes; false when there is nobody to follow this frame.
     bool followSpectateTarget();
 
+    // The spectated player's eyes at the time entities are drawn this frame; the renderer applies it every frame,
+    // as it does a camera track, so nothing of the observer's own first-person motion shows through.
+    [[nodiscard]] std::optional<ReplayCameraViewpoint> spectateRenderPose() const;
+
     void                                       setSpectateTarget(std::optional<ActorUniqueID> target);
     [[nodiscard]] std::optional<ActorUniqueID> spectateTarget() const noexcept { return mSpectateTarget; }
     [[nodiscard]] std::vector<ReplayPlayerInfo> listReplayPlayers() const;

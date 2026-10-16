@@ -788,31 +788,45 @@ std::vector<ReplayPlayerInfo> ReplaySession::listReplayPlayers() const {
     return players;
 }
 
-bool ReplaySession::followSpectateTarget() {
-    if (!mSpectateTarget || !mReplayPlayer || !mReplayWorldJoined || !mNetworkHandler || mPendingReplayDimension) {
-        return false;
+std::optional<ReplayCameraViewpoint> ReplaySession::spectateRenderPose() const {
+    if (!mSpectateTarget || !mReplayPlayer || !mReplayWorldJoined || mPendingReplayDimension
+        || mExportTimelinePhase != ReplayExportTimelinePhase::Inactive) {
+        return std::nullopt;
     }
     auto* actor = mReplayPlayer->getLevel().fetchEntity(*mSpectateTarget, false);
     // Out of range or not spawned at this point of the replay: hold the view until the player is back.
-    if (!actor) return false;
+    if (!actor) return std::nullopt;
 
-    // Use the pose the renderer draws this frame, so the view moves as smoothly as the player's model would.
-    Vec3 eyes     = actor->getPosition();
-    Vec2 rotation = actor->getRotation();
+    // The pose the player's model is drawn with this frame, so the view moves exactly as they do on screen.
+    Vec3  eyes     = actor->getPosition();
+    float pitch    = actor->getRotation().x;
+    float headYaw  = actor->getRotation().y;
     if (auto const key = mEntityRenderKeys.find(*mSpectateTarget); key != mEntityRenderKeys.end()) {
         if (auto const time = getEntityRenderSampleTime()) {
             if (auto const pose = visuals::sampleReplayEntityPose(key->second, *time)) {
-                eyes     = Vec3{pose->position.x, pose->position.y, pose->position.z};
-                rotation = Vec2{pose->pitch, pose->headYaw};
+                eyes    = Vec3{pose->position.x, pose->position.y, pose->position.z};
+                pitch   = pose->pitch;
+                headYaw = pose->headYaw;
             }
         }
     }
-    if (!std::isfinite(eyes.x) || !std::isfinite(eyes.y) || !std::isfinite(eyes.z) || !std::isfinite(rotation.x)
-        || !std::isfinite(rotation.y)) {
-        return false;
+    if (!std::isfinite(eyes.x) || !std::isfinite(eyes.y) || !std::isfinite(eyes.z) || !std::isfinite(pitch)
+        || !std::isfinite(headYaw)) {
+        return std::nullopt;
     }
+    // A player's position is at eye height, the point the first-person camera sits at.
+    return ReplayCameraViewpoint{eyes.x, eyes.y, eyes.z, pitch, headYaw, 0.0f, 70.0f};
+}
 
-    // A player's position is at eye height, the same point the observer camera is placed by.
+bool ReplaySession::followSpectateTarget() {
+    if (!mNetworkHandler) return false;
+    auto const pose = spectateRenderPose();
+    if (!pose) return false;
+
+    // The observer only has to stand where the view is, for chunk loading and for the free camera to take over
+    // from there; the renderer draws the view itself every frame.
+    Vec3 const     eyes{pose->x, pose->y, pose->z};
+    Vec2 const     rotation{pose->pitch, pose->yaw};
     ChunkPos const cameraChunk{eyes.x, eyes.z};
     bool const     serverSyncNeeded = !mLastObserverServerSyncChunk || mLastObserverServerSyncChunk->x != cameraChunk.x
                                || mLastObserverServerSyncChunk->z != cameraChunk.z;
@@ -822,7 +836,6 @@ bool ReplaySession::followSpectateTarget() {
     if (serverSyncNeeded) syncObserverServerPosition(eyes, rotation);
     return true;
 }
-
 void ReplaySession::markReplayTickAdvanced() noexcept {
     mTickAdvancedAt.store(std::chrono::steady_clock::now(), std::memory_order_release);
     mFrozenPreviewPartial.store(-1.0f, std::memory_order_release);

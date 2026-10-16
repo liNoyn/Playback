@@ -55,6 +55,7 @@ std::array<std::atomic_bool, 2> gFinalViewFailureLogged{};
 std::array<std::atomic_bool, 2> gCameraEcsFailureLogged{};
 
 thread_local std::optional<keyframe::CameraRenderState> gParkedObserverCamera;
+std::atomic<float>                                      gNativeFov{70.0f};
 std::mutex                                              gRendererCameraMutex;
 std::optional<keyframe::CameraRenderState>              gRendererCameraState;
 std::optional<RenderCameraProjection>                   gRenderCameraProjection;
@@ -507,6 +508,36 @@ keyframe::CameraTimelineRenderContextHandle makePreviewRenderContext() noexcept 
 
     auto const clear = [] { keyframe::setPreviewCameraApplied(false); };
 
+    // Spectating renders through the same per-frame path as a camera track, also while paused, so the observer's
+    // own first-person movement (gravity, jumping, view bob, tick-rate steps) never reaches the view.
+    if (auto const spectate = replay.spectateRenderPose()) {
+        auto const time = replay.getEntityRenderSampleTime();
+        if (time) {
+            keyframe::CameraRenderState state{
+                spectate->x,
+                spectate->y,
+                spectate->z,
+                spectate->yaw,
+                spectate->pitch,
+                0.0f,
+                gNativeFov.load(std::memory_order_relaxed),
+            };
+            auto const serial = gPreviewFrameSerial.fetch_add(1, std::memory_order_relaxed) + 1;
+            keyframe::setPreviewCameraApplied(true);
+            gParkedObserverCamera = state;
+            return keyframe::publishCameraTimelineRenderContext(
+                keyframe::CameraTimelineRenderContext{
+                    *time,
+                    keyframe::CameraTimelineSource::Preview,
+                    0,
+                    keyframe::CameraTimelineSample{state, {}},
+                    {},
+                    serial,
+                }
+            );
+        }
+    }
+
     if (!keyframe::hasCameraTimeline(keyframe::CameraTimelineSource::Preview)) {
         clear();
         return {};
@@ -612,6 +643,10 @@ LL_TYPE_INSTANCE_HOOK(
     float const native  = origin(amount, enableVariableFov);
     auto const  context = keyframe::currentCameraTimelineRenderContext();
     if (context && context->sample && finite(context->sample->state)) return context->sample->state.fov;
+    // Spectating keeps the player's own field of view.
+    if (!gParkedObserverCamera && std::isfinite(native) && native > 1.0f && native < 179.0f) {
+        gNativeFov.store(native, std::memory_order_relaxed);
+    }
     return gParkedObserverCamera && observerStillParked() ? gParkedObserverCamera->fov : native;
 }
 
