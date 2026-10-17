@@ -26,6 +26,7 @@
 #include <unordered_set>
 #include <vector>
 
+class LevelChunk;
 class LevelChunkPacket;
 class SubChunkPacket;
 class Packet;
@@ -136,6 +137,19 @@ private:
     uint64_t                                mBufferMaxBytes    = 2048ull << 20;
     std::vector<BufferChunk>                mEpochChunks; // finished chunks of the epoch being written
     std::vector<std::shared_ptr<BufferEpoch>> mFinishedEpochs;
+
+    // Packets of every column from the last snapshot, reused while a column has not changed.
+    struct CachedSnapshotColumn {
+        LevelChunk const*                 chunk{}; // identity: a reloaded column is a new object
+        std::shared_ptr<LevelChunkPacket> level;
+        std::shared_ptr<SubChunkPacket>   sub;
+    };
+    std::unordered_map<ChunkPos, CachedSnapshotColumn> mSnapshotColumnCache;
+    std::optional<DimensionType>                       mSnapshotCacheDimension;
+    uint64_t                                           mSnapshotSerial{};
+    size_t                                             mLastSnapshotSerializedColumns{};
+    std::mutex                                         mDirtyColumnsMutex;
+    std::unordered_map<ChunkPos, int>                  mDirtyColumns; // snapshots left to serialize the column again
 
     std::vector<std::shared_ptr<LevelChunkPacket>>            mSnapshotLevelChunks;
     std::vector<std::shared_ptr<SubChunkPacket>>              mSnapshotSubChunks;
@@ -274,6 +288,9 @@ public:
     void recordSpawnedActor(ActorRuntimeID runtimeId, Packet const& fallbackPacket);
 
     void recordNetworkGamePacket(Packet const& packet);
+
+    void noteChunkMutation(Packet const& packet);
+    void clearSnapshotCache();
 
     void recordLevelChunkPacket(LevelChunkPacket const& packet);
 

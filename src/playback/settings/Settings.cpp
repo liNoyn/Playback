@@ -210,7 +210,7 @@ Settings fromJson(Json const& json) {
     read(instant, "chunkSeconds", settings.instantReplay.chunkSeconds);
     settings.instantReplay.seconds      = std::clamp(settings.instantReplay.seconds, 15, 1200);
     settings.instantReplay.maxMegabytes = std::clamp(settings.instantReplay.maxMegabytes, 256, 16384);
-    settings.instantReplay.chunkSeconds = std::clamp(settings.instantReplay.chunkSeconds, 10, 120);
+    settings.instantReplay.chunkSeconds = std::clamp(settings.instantReplay.chunkSeconds, 5, 120);
 
     auto const& autoRecord = section(json, "autoRecord");
     read(autoRecord, "enabled", settings.autoRecord.enabled);

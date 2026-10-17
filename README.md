@@ -91,10 +91,12 @@ kept; **`F9` saves it** as a replay named `...-instant.zip` (tagged `instant`), 
 
 - It runs **alongside recording**: during a recording `F9` cuts out the recent part without stopping the recording.
   Turning it on during a recording takes effect at once (the first save then reaches back to the start of the current chunk).
-- Saving happens in the background. A saved clip can be up to one chunk longer than the set length (a chunk is a third
-  of the length or 30 s, whichever is shorter), because chunks start from a full world snapshot.
-- Each chunk takes a world snapshot, a short periodic load. Raise `instantReplay.chunkSeconds` if you notice it.
-- Disk use is capped by `instantReplay.maxMegabytes` (2048 by default). The buffer is dropped when you leave the world
+- As with NVIDIA, the buffer never stops: once it reaches the set length, the latest stretch of that length is always
+  ready to save (the indicator shows "kept / length"). Save as often as you like; saving does not interrupt it.
+- Saving happens in the background and runs up to the moment you press the key. A clip can be up to one chunk longer
+  than the set length (a chunk is a twelfth of it: 5 s up to 1 minute, otherwise 10-30 s), because chunks start from a
+  world snapshot.
+- Snapshots only rebuild the chunk columns that changed since the last one, so the load on the game is small.- Disk use is capped by `instantReplay.maxMegabytes` (2048 by default). The buffer is dropped when you leave the world
   or quit; only what you save with `F9` is kept.
 
 ### Auto-record

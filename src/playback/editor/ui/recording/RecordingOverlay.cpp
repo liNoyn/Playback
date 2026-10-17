@@ -791,15 +791,28 @@ void drawHud() {
                 case RecordingPhase::Saving:
                     ImGui::TextColored(color(kBlue, opacity), "%s", "playback.record.state.saving"_tr().c_str());
                     break;
-                case RecordingPhase::Buffering:
-                    ImGui::TextColored(color(kBlue, opacity), "%s", ICON_TRACK_ACTIVE);
+                case RecordingPhase::Buffering: {
+                    // Always live, like NVIDIA's indicator: the dot keeps breathing once the buffer is full.
+                    float pulse = 1.0f;
+                    if (!config.ui.reduceMotion) pulse = 0.55f + 0.45f * (0.5f + 0.5f * std::cos(static_cast<float>(ImGui::GetTime()) * 3.0f));
+                    ImGui::TextColored(color(kBlue, opacity * pulse), "%s", ICON_TRACK_ACTIVE);
                     ImGui::SameLine(0, 6);
                     ImGui::TextColored(color(kInk, opacity), "%s", "playback.record.hud.buffer"_tr().c_str());
                     break;
+                }
                 case RecordingPhase::Idle:
                     break;
                 }
-                if (config.hud.showElapsed && status.phase != RecordingPhase::Saving) {
+                if (config.hud.showElapsed && status.phase == RecordingPhase::Buffering) {
+                    // What a save would contain now, out of the set length; it stays at the length once full.
+                    ImGui::SameLine(0, 8);
+                    ImGui::TextColored(
+                        color(kInk, opacity),
+                        "%s",
+                        std::format("{} / {}", elapsedText(status.elapsedSeconds), elapsedText(config.instantReplay.seconds))
+                            .c_str()
+                    );
+                } else if (config.hud.showElapsed && status.phase != RecordingPhase::Saving) {
                     ImGui::SameLine(0, 8);
                     ImGui::TextColored(color(kInk, opacity), "%s", elapsedText(status.elapsedSeconds).c_str());
                 }

@@ -41,6 +41,8 @@
 #include "mc/network/packet/ChangeFakePlayerScore.h"
 #include "mc/network/packet/ChangePlayerScore.h"
 #include "mc/network/packet/DimensionDataPacket.h"
+#include "mc/network/packet/BlockActorDataPacket.h"
+#include "mc/network/packet/BlockEventPacket.h"
 #include "mc/network/packet/LevelChunkPacket.h"
 #include "mc/network/packet/LevelEventPacket.h"
 #include "mc/network/packet/LevelSoundEventPacket.h"
@@ -103,7 +105,9 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <condition_variable>
 #include <future>
+#include <mutex>
 #include <iomanip>
 #include <iterator>
 #include <limits>
@@ -134,6 +138,14 @@ constexpr ActorRuntimeID RecordedPlayerRuntimeId{uint64_t{1} << 62};
 // A dimension change floods the engine task groups, and a missed snapshot there cancels the whole recording.
 constexpr auto DimensionChangeBarrierTimeout = std::chrono::milliseconds{15000};
 constexpr auto ChunkRotationBarrierTimeout   = std::chrono::milliseconds{8000};
+// Incremental snapshots: columns this close to the player (in chunks) are always serialized again, every column is
+// refreshed once per this many snapshots, and up to this many columns are serialized without worker threads.
+constexpr int    SnapshotPlayerRadius  = 2;
+constexpr uint64_t SnapshotRefreshCycle = 30;
+constexpr size_t SnapshotInlineColumns = 48;
+// How many snapshots a column stays marked after a packet changed it.
+constexpr int DirtyBlockSnapshots = 2;
+constexpr int DirtyChunkSnapshots = 3;
 constexpr auto InitialSnapshotBarrierTimeout = std::chrono::milliseconds{2000};
 
 std::string pathToUtf8(std::filesystem::path const& path) {
@@ -594,14 +606,40 @@ LiveStatusCallback statusCallback(std::shared_ptr<RecordingOutcome> outcome) {
 
 // One recording session of the instant replay buffer: its folder (chunk files and chunk cache) goes away with it,
 // unless an export that still reads from it keeps it alive.
+// The epoch's saver finishes on a background thread, so the folder and size arrive later; a save waits for them.
 struct BufferEpoch {
-    std::filesystem::path    dir;
     std::vector<BufferChunk> chunks;
-    uint64_t                 bytes{};
+    int                      ticks{};
+
+    std::mutex              mutex;
+    std::condition_variable readyChanged;
+    bool                    ready{};
+    std::filesystem::path   dir; // empty if the saver failed
+    std::atomic<uint64_t>   bytes{};
+
+    void finish(std::filesystem::path path) {
+        {
+            std::scoped_lock lock(mutex);
+            dir   = std::move(path);
+            ready = true;
+        }
+        readyChanged.notify_all();
+    }
+
+    // Blocks a background save until the folder is complete; returns it, or empty when the epoch failed.
+    std::filesystem::path waitDir() {
+        std::unique_lock lock(mutex);
+        readyChanged.wait(lock, [this] { return ready; });
+        return dir;
+    }
 
     ~BufferEpoch() {
-        std::error_code ec;
-        if (!dir.empty()) std::filesystem::remove_all(dir, ec);
+        // Deleting a few hundred megabytes must not hold up the game thread that drops the last reference.
+        if (dir.empty()) return;
+        std::thread([dir = std::move(dir)] {
+            std::error_code ec;
+            std::filesystem::remove_all(dir, ec);
+        }).detach();
     }
 };
 
@@ -648,7 +686,8 @@ void runInstantExport(std::shared_ptr<InstantExportJob> job) {
 
         std::vector<CompactChunk> chunks;
         for (auto const& source : job->sources) {
-            auto const base = source.epoch ? source.epoch->dir : job->stagingDir;
+            auto const base = source.epoch ? source.epoch->waitDir() : job->stagingDir;
+            if (base.empty()) throw std::runtime_error("an older part of the buffer could not be written");
             chunks.push_back({base / source.chunk.name, base / "level_chunk_caches"});
         }
         auto const compacted = compactChunks(chunks, outDir);
@@ -892,11 +931,14 @@ void Recorder::startBuffer() {
     );
 }
 
-// Window, chunk length and disk limit of the instant replay. Chunks are a third of the window at most, so a save is
-// not much longer than asked for (it always starts at a chunk boundary).
+// Window, chunk length and disk limit of the instant replay. A save starts at a chunk boundary, so chunks are a
+// twelfth of the window (5 or 10 s at least, chunkSeconds at most): the clip is at most that much longer than asked for.
+// Snapshots only serialize what changed, which is what makes chunks this short affordable.
 void Recorder::configureInstant(settings::Settings const& config) {
     int const seconds  = config.instantReplay.seconds;
-    int const chunkSec = std::min(config.instantReplay.chunkSeconds, std::max(10, seconds / 3));
+    // Entities and player skins are written whole at every chunk, so only short windows get the 5 s minimum.
+    int const minimum  = seconds <= 60 ? 5 : 10;
+    int const chunkSec = std::clamp(seconds / 12, minimum, std::max(minimum, config.instantReplay.chunkSeconds));
     mBufferWindowTicks = seconds * 20;
     mBufferChunkTicks  = chunkSec * 20;
     mBufferMaxBytes    = static_cast<uint64_t>(config.instantReplay.maxMegabytes) << 20;
@@ -995,7 +1037,16 @@ void Recorder::stop() {
     }
     logRecordedGamePacketSummary();
     saveRecording();
+    clearSnapshotCache();
     RecordingStatus::getInstance().setPhase(RecordingPhase::Idle);
+}
+
+void Recorder::clearSnapshotCache() {
+    mSnapshotColumnCache.clear();
+    mSnapshotCacheDimension.reset();
+    mSnapshotSerial = 0;
+    std::scoped_lock lock(mDirtyColumnsMutex);
+    mDirtyColumns.clear();
 }
 
 void Recorder::saveRecording() {
@@ -1106,6 +1157,7 @@ void Recorder::resetStateForNewRecording() {
     mMetadata.gameVersion = PlaybackMeta::currentGameVersion();
     mRecordingDimension.reset();
     resetChunkSnapshot();
+    clearSnapshotCache();
     if (auto level = ll::service::getMultiPlayerLevel()) {
         mMetadata.worldName = level->getLevelData().mLevelName;
     }
@@ -1356,27 +1408,61 @@ Recorder::SnapshotCaptureResult Recorder::captureChunkSnapshot(
         return SnapshotCaptureResult::Failed;
     }
 
-    size_t const       numColumns = columns.size();
-    unsigned int const numThreads = std::max(1u, std::thread::hardware_concurrency());
-    size_t const       batchSize  = std::max(size_t{1}, (numColumns + numThreads - 1) / numThreads);
-
     struct ColumnResult {
         std::shared_ptr<LevelChunkPacket> levelChunk;
         std::shared_ptr<SubChunkPacket>   subChunk;
         std::string                       error;
     };
 
+    // Incremental snapshot: a column is serialized again only when it may have changed since the last snapshot
+    // (a recorded packet touched it, it was reloaded, it is next to the player, or its turn in the slow rolling
+    // refresh came). Everything else reuses the packets from before, which keeps the game thread's pause short.
+    ++mSnapshotSerial;
+    if (mSnapshotCacheDimension != dimension) {
+        mSnapshotColumnCache.clear();
+        mSnapshotCacheDimension = dimension;
+    }
+    std::unordered_set<ChunkPos> dirty;
+    {
+        std::scoped_lock lock(mDirtyColumnsMutex);
+        for (auto it = mDirtyColumns.begin(); it != mDirtyColumns.end();) {
+            dirty.insert(it->first);
+            // Marks outlive one snapshot: in single player the server reports a change before the client applies it.
+            if (--it->second <= 0) it = mDirtyColumns.erase(it);
+            else ++it;
+        }
+    }
+    auto const isReusable = [&](SnapshotColumn const& column) {
+        auto const cached = mSnapshotColumnCache.find(column.pos);
+        if (cached == mSnapshotColumnCache.end() || cached->second.chunk != column.chunk.get()) return false;
+        if (dirty.contains(column.pos)) return false;
+        int const dx = column.pos.x - center.x;
+        int const dz = column.pos.z - center.z;
+        if (dx * dx + dz * dz <= SnapshotPlayerRadius * SnapshotPlayerRadius) return false;
+        auto const spread = static_cast<uint64_t>(static_cast<uint32_t>(column.pos.x) * 73856093u
+                                                  ^ static_cast<uint32_t>(column.pos.z) * 19349663u);
+        return (spread + mSnapshotSerial) % SnapshotRefreshCycle != 0;
+    };
+    std::vector<char>   reuse(columns.size());
+    std::vector<size_t> pending;
+    pending.reserve(columns.size());
+    for (size_t index = 0; index < columns.size(); ++index) {
+        reuse[index] = isReusable(columns[index]) ? 1 : 0;
+        if (!reuse[index]) pending.push_back(index);
+    }
+
+    size_t const numColumns = pending.size();
+    // Spawning threads costs more than serializing a handful of columns, and leaving a core free keeps the
+    // game's other threads (audio, rendering work) from stalling behind the snapshot.
+    unsigned int const numThreads = numColumns <= SnapshotInlineColumns
+                                      ? 1u
+                                      : std::max(1u, std::thread::hardware_concurrency() - 1);
+    size_t const batchSize = std::max(size_t{1}, (numColumns + numThreads - 1) / numThreads);
+
     std::vector<std::future<std::vector<ColumnResult>>> futures;
+    std::vector<std::vector<ColumnResult>>              inlineResults;
 
-    for (unsigned int t = 0; t < numThreads; ++t) {
-        size_t start = t * batchSize;
-        if (start >= numColumns) break;
-        size_t end = std::min(start + batchSize, numColumns);
-
-        futures.push_back(
-            std::async(
-                std::launch::async,
-                [&columns, start, end, dimension, air, dimensionMinHeight]() -> std::vector<ColumnResult> {
+    auto const serializeBatch = [&columns, &pending, dimension, air, dimensionMinHeight](size_t start, size_t end) {
                     std::vector<ColumnResult> results;
                     results.reserve(end - start);
 
@@ -1386,7 +1472,8 @@ Recorder::SnapshotCaptureResult Recorder::captureChunkSnapshot(
                         return results;
                     }
 
-                    for (size_t ci = start; ci < end; ++ci) {
+                    for (size_t pi = start; pi < end; ++pi) {
+                        size_t const ci = pending[pi];
                         ColumnResult result;
                         auto const&  pos   = columns[ci].pos;
                         auto&        chunk = *columns[ci].chunk;
@@ -1534,26 +1621,60 @@ Recorder::SnapshotCaptureResult Recorder::captureChunkSnapshot(
                         results.push_back(std::move(result));
                     }
                     return results;
-                }
-            )
-        );
+    };
+
+    if (numThreads == 1) {
+        if (numColumns > 0) inlineResults.push_back(serializeBatch(0, numColumns));
+    } else {
+        for (unsigned int t = 0; t < numThreads; ++t) {
+            size_t start = t * batchSize;
+            if (start >= numColumns) break;
+            size_t end = std::min(start + batchSize, numColumns);
+            futures.push_back(std::async(std::launch::async, serializeBatch, start, end));
+        }
+        for (auto& future : futures) inlineResults.push_back(future.get());
+    }
+
+    std::vector<ColumnResult> fresh;
+    fresh.reserve(numColumns);
+    for (auto& batch : inlineResults) {
+        for (auto& result : batch) {
+            if (!result.error.empty()) {
+                mSnapshotFailure = std::move(result.error);
+                mSnapshotColumnCache.clear();
+                return SnapshotCaptureResult::Failed;
+            }
+            fresh.push_back(std::move(result));
+        }
+    }
+    if (fresh.size() != numColumns) {
+        mSnapshotFailure = "The chunk snapshot serialized fewer columns than requested";
+        mSnapshotColumnCache.clear();
+        return SnapshotCaptureResult::Failed;
     }
 
     std::vector<std::shared_ptr<LevelChunkPacket>> levelChunks;
     std::vector<std::shared_ptr<SubChunkPacket>>   subChunkPackets;
     levelChunks.reserve(columns.size());
     subChunkPackets.reserve(columns.size());
-    for (auto& future : futures) {
-        auto batchResults = future.get();
-        for (auto& result : batchResults) {
-            if (!result.error.empty()) {
-                mSnapshotFailure = std::move(result.error);
-                return SnapshotCaptureResult::Failed;
-            }
-            levelChunks.emplace_back(std::move(result.levelChunk));
-            if (result.subChunk) subChunkPackets.emplace_back(std::move(result.subChunk));
+    std::unordered_map<ChunkPos, CachedSnapshotColumn> nextCache;
+    nextCache.reserve(columns.size());
+    size_t freshIndex = 0;
+    for (size_t index = 0; index < columns.size(); ++index) {
+        CachedSnapshotColumn entry;
+        if (reuse[index]) {
+            entry = mSnapshotColumnCache.at(columns[index].pos);
+        } else {
+            auto& result = fresh[freshIndex++];
+            entry        = {columns[index].chunk.get(), std::move(result.levelChunk), std::move(result.subChunk)};
         }
+        levelChunks.push_back(entry.level);
+        if (entry.sub) subChunkPackets.push_back(entry.sub);
+        // Columns no longer loaded drop out of the cache here.
+        nextCache.insert_or_assign(columns[index].pos, std::move(entry));
     }
+    mSnapshotColumnCache = std::move(nextCache);
+    mLastSnapshotSerializedColumns = numColumns;
 
     auto* finalPlayer = clientInstance->getLocalPlayer();
     if (finalPlayer != localPlayer || !finalPlayer || finalPlayer->getDimensionId() != dimension) {
@@ -1806,8 +1927,10 @@ bool Recorder::commitChunkSnapshot(
     auto longestMs = std::chrono::duration<double, std::milli>(mLongestSnapshotStall).count();
     auto waitMs    = std::chrono::duration<double, std::milli>(barrierWait).count();
     getLogger().debug(
-        "Captured replay snapshot with {} columns in {:.3f} ms (longest stall {:.3f} ms, barrier wait {:.3f} ms)",
+        "Captured replay snapshot with {} columns ({} serialized) in {:.3f} ms (longest stall {:.3f} ms, barrier "
+        "wait {:.3f} ms)",
         mSnapshotLevelChunks.size(),
+        mLastSnapshotSerializedColumns,
         elapsedMs,
         longestMs,
         waitMs
@@ -2137,8 +2260,57 @@ bool Recorder::writeLocalPlayerState() {
     return true;
 }
 
+// Remembers which columns a packet changes, so the next snapshot serializes them again instead of reusing them.
+void Recorder::noteChunkMutation(Packet const& packet) {
+    auto const columnOf = [](BlockPos const& pos) { return ChunkPos{pos.x >> 4, pos.z >> 4}; };
+    std::vector<std::pair<ChunkPos, int>> touched;
+    switch (packet.getId()) {
+    case MinecraftPacketIds::UpdateBlock:
+        touched.emplace_back(columnOf(*static_cast<UpdateBlockPacket const&>(packet).mPos), DirtyBlockSnapshots);
+        break;
+    case MinecraftPacketIds::UpdateBlockSynced:
+        touched.emplace_back(columnOf(*static_cast<UpdateBlockSyncedPacket const&>(packet).mPos), DirtyBlockSnapshots);
+        break;
+    case MinecraftPacketIds::UpdateSubChunkBlocks:
+        touched.emplace_back(
+            columnOf(*static_cast<UpdateSubChunkBlocksPacket const&>(packet).mSubChunkBlockPosition),
+            DirtyBlockSnapshots
+        );
+        break;
+    case MinecraftPacketIds::BlockActorData:
+        touched.emplace_back(columnOf(*static_cast<BlockActorDataPacket const&>(packet).mPos), DirtyBlockSnapshots);
+        break;
+    case MinecraftPacketIds::TileEvent:
+        touched.emplace_back(columnOf(*static_cast<BlockEventPacket const&>(packet).mPos), DirtyBlockSnapshots);
+        break;
+    case MinecraftPacketIds::FullChunkData:
+        touched.emplace_back(*static_cast<LevelChunkPacket const&>(packet).mPos, DirtyChunkSnapshots);
+        break;
+    case MinecraftPacketIds::SubChunkPacket: {
+        auto const& subChunk = static_cast<SubChunkPacket const&>(packet);
+        auto const& center   = *subChunk.mCenterPos;
+        for (auto const& entry : *subChunk.mSubChunkData) {
+            auto const& offset = *entry.mSubChunkPosOffset;
+            touched.emplace_back(ChunkPos{center.x + offset.mX, center.z + offset.mZ}, DirtyChunkSnapshots);
+        }
+        if (subChunk.mSubChunkData->empty()) touched.emplace_back(ChunkPos{center.x, center.z}, DirtyChunkSnapshots);
+        break;
+    }
+    default:
+        return;
+    }
+    std::scoped_lock lock(mDirtyColumnsMutex);
+    for (auto const& [pos, snapshots] : touched) {
+        auto& remaining = mDirtyColumns[pos];
+        remaining       = std::max(remaining, snapshots);
+    }
+}
+
 void Recorder::recordNetworkGamePacket(Packet const& packet) {
-    if (isActive()) TickClock::getInstance().observePacket(packet);
+    if (isActive()) {
+        TickClock::getInstance().observePacket(packet);
+        noteChunkMutation(packet);
+    }
     if (NetworkPacketFilter::shouldFilter(packet.getId())) return;
     recordGamePacket(packet);
 }
@@ -2523,48 +2695,51 @@ bool Recorder::afterBufferChunk() {
 
     int epochTicks = 0;
     for (auto const& chunk : mEpochChunks) epochTicks += chunk.ticks;
-    auto const currentBytes = mAsyncReplaySaver ? directorySize(mAsyncReplaySaver->recordPath()) : 0;
-    if (epochTicks >= mBufferWindowTicks || currentBytes > mBufferMaxBytes / 2) return rotateBufferEpoch();
+    if (epochTicks >= mBufferWindowTicks) return rotateBufferEpoch();
     return true;
 }
 
+// Starts a new epoch. The full one is closed on a background thread: closing writes out its queue and the chunk
+// cache, which used to freeze the game every time the buffer reached its length.
 bool Recorder::rotateBufferEpoch() {
     if (!mAsyncReplaySaver) return true;
-    // finish() writes out everything queued (including staging copies for saves in progress) and the chunk cache.
-    auto saver = std::move(mAsyncReplaySaver);
-    auto path  = saver->finish();
-    if (auto error = saver->getError()) {
-        mAsyncReplaySaver = std::move(saver);
+    if (auto error = mAsyncReplaySaver->getError()) {
         failRecording("Replay saver failed: " + *error);
-        return false;
-    }
-    saver.reset();
-    if (path.empty()) {
-        failRecording("The instant replay buffer could not be closed");
         return false;
     }
 
     auto epoch    = std::make_shared<BufferEpoch>();
-    epoch->dir    = path;
     epoch->chunks = std::move(mEpochChunks);
-    epoch->bytes  = directorySize(path);
+    for (auto const& chunk : epoch->chunks) epoch->ticks += chunk.ticks;
     mEpochChunks.clear();
+
+    std::thread([saver = std::shared_ptr<AsyncReplaySaver>(std::move(mAsyncReplaySaver)), epoch]() mutable {
+        auto path = saver->finish();
+        if (auto error = saver->getError(); error || path.empty()) {
+            getLogger().error("Unable to close a part of the instant replay buffer: {}", error.value_or("no folder"));
+            saver.reset();
+            epoch->finish({});
+            return;
+        }
+        saver.reset();
+        epoch->bytes = directorySize(path);
+        epoch->finish(std::move(path));
+    }).detach();
     mFinishedEpochs.push_back(std::move(epoch));
 
+    // Older epochs go once the newer ones alone cover the window, or when the buffer outgrows its disk budget.
     auto newerTicks = [this](size_t from) {
         int ticks = 0;
-        for (size_t i = from; i < mFinishedEpochs.size(); ++i) {
-            for (auto const& chunk : mFinishedEpochs[i]->chunks) ticks += chunk.ticks;
-        }
+        for (size_t i = from; i < mFinishedEpochs.size(); ++i) ticks += mFinishedEpochs[i]->ticks;
         return ticks;
     };
     while (mFinishedEpochs.size() >= 2 && newerTicks(1) >= mBufferWindowTicks) {
         mFinishedEpochs.erase(mFinishedEpochs.begin());
     }
     uint64_t total = 0;
-    for (auto const& finished : mFinishedEpochs) total += finished->bytes;
+    for (auto const& finished : mFinishedEpochs) total += finished->bytes.load();
     while (mFinishedEpochs.size() > 1 && total > mBufferMaxBytes) {
-        total -= mFinishedEpochs.front()->bytes;
+        total -= mFinishedEpochs.front()->bytes.load();
         mFinishedEpochs.erase(mFinishedEpochs.begin());
     }
 
@@ -2577,7 +2752,6 @@ bool Recorder::rotateBufferEpoch() {
     mMetadata.chunks.clear();
     return true;
 }
-
 // Picks the newest chunks that cover the window, copies the part still being written (the worker thread does that
 // once the chunk just closed is on disk) and cuts the replay in the background.
 void Recorder::queueInstantExport() {
@@ -2638,6 +2812,7 @@ void Recorder::cancelRecording(std::string_view reason, bool quiet) {
     mInstantSavePending = false;
     mEpochChunks.clear();
     mFinishedEpochs.clear(); // exports still reading an epoch keep it alive until they are done
+    clearSnapshotCache();
     if (mAsyncReplaySaver) {
         mAsyncReplaySaver->cancel();
         mAsyncReplaySaver.reset();

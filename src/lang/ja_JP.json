@@ -21,7 +21,7 @@
             "hud": {
                 "rec": "REC",
                 "free": "空き {} GB",
-                "buffer": "BUFFER",
+                "buffer": "REPLAY",
                 "instant": "インスタントリプレイ有効"
             },
             "state": {

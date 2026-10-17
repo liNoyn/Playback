@@ -21,7 +21,7 @@
             "hud": {
                 "rec": "REC",
                 "free": "剩余 {} GB",
-                "buffer": "缓冲",
+                "buffer": "回放",
                 "instant": "即时回放已开启"
             },
             "state": {

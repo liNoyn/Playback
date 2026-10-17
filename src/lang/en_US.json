@@ -21,7 +21,7 @@
             "hud": {
                 "rec": "REC",
                 "free": "{} GB free",
-                "buffer": "BUFFER",
+                "buffer": "REPLAY",
                 "instant": "Instant replay on"
             },
             "state": {
